@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "asyncmc_world_gen_server",
+  "version": "${version}",
+  "name": "AsyncMC World Generation Server",
+  "description": "Uses this server to generate Minecraft world chunks for other remote servers",
+  "authors": [
+    "joserobjr"
+  ],
+  "contact": {
+    "homepage": "https://github.com/AsyncMC/AsyncMC-Server",
+    "issues": "https://github.com/AsyncMC/AsyncMC-Server/issues",
+    "sources": "https://github.com/AsyncMC/AsyncMC-Server"
+  },
+  "license": "GNU Affero General Public License version 3 (AGPLv3)",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      {
+        "adapter": "kotlin",
+        "value": "org.asyncmc.worldgen_server.fabric.AsyncMcFabricWorldGenServer"
+      }
+    ]
+  },
+  "mixins": [
+    "asyncmc_world_gen_server.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.11.7",
+    "fabric": "*",
+    "fabric-language-kotlin": ">=1.6.5+kotlin.1.5.31",
+    "minecraft": "1.17.x",
+    "java": ">=16"
+  }
+}

@@ -12,7 +12,7 @@ import java.lang.reflect.Type
  *
  */
 public abstract class ModuleDescriptor<E: Module> (
-    moduleId: String,
+    public val id: ModuleId,
     public val dependsOn: Set<ModuleId> = emptySet(),
     softDependsOn: Set<ModuleId> = emptySet(),
     loadAfter: Set<ModuleId> = emptySet(),
@@ -22,8 +22,6 @@ public abstract class ModuleDescriptor<E: Module> (
     public val disableAfter: Set<ModuleId> = emptySet(),
     disableBefore: Set<ModuleId> = emptySet(),
 ) {
-    public val id: ModuleId = ModuleId(moduleId)
-
     private val moduleClass: Class<E> = javaClass.genericSuperclass.let { genericSuperclass ->
         var type: Type = genericSuperclass
 

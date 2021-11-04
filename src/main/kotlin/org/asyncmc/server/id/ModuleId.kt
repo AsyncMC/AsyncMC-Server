@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 @JvmInline
 public value class ModuleId(public val fullModuleId: NamespacedId): Identifier {
+    public constructor(organization: String, id: String): this(NamespacedId(organization, id))
     public inline val organization: String get() = fullModuleId.namespace
     public inline val id: String get() = fullModuleId.id
     public companion object {

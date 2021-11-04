@@ -1,13 +1,15 @@
 import org.asyncmc.server.module.ModuleDescriptor;
 
+@SuppressWarnings("JavaRequiresAutoModule")
 module org.asyncmc.server {
     uses ModuleDescriptor;
 
-    requires kotlin.stdlib;
-    requires kotlinx.coroutines.core.jvm;
-    requires org.jetbrains.annotations;
-    requires kotlinx.serialization.json;
-    requires kotlin.inline.logger.jvm;
+    requires transitive kotlin.stdlib;
+    requires transitive kotlinx.serialization.json;
+    requires transitive org.jetbrains.annotations;
+
+    requires transitive kotlinx.coroutines.core.jvm; // Automatic
+    requires transitive kotlin.inline.logger.jvm; // Automatic
 
     exports org.asyncmc.server;
     exports org.asyncmc.server.id;

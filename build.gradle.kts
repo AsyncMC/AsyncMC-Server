@@ -1,15 +1,12 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
     application
-    kotlin("jvm") version "1.5.31"
+    kotlin("jvm")
     id("org.jetbrains.kotlin.plugin.serialization") version "1.5.31"
 }
-val kotlinVersion = "1.5.31"
-
+apply<KotlinJavaModuleFixer>()
+val kotlinVersion: String by project.extra
 
 allprojects {
-    ext["kotlinVersion"] = kotlinVersion
     group = "org.asyncmc"
 
     repositories {
@@ -37,60 +34,4 @@ dependencies {
 
 kotlin {
     explicitApi()
-}
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_16
-    targetCompatibility = JavaVersion.VERSION_16
-}
-
-sourceSets {
-    main {
-        java {
-            srcDirs("src/main/kotlin")
-        }
-    }
-}
-
-tasks {
-    val rebuild = create("rebuild") {
-        dependsOn(clean)
-        inputs.file(projectDir.resolve("src/main/kotlin/module-info.java"))
-    }
-
-    run.configure {
-        dependsOn(rebuild, jar)
-        doFirst {
-            jvmArgs = listOf(
-                "--module-path", classpath.asPath
-            )
-            classpath = files()
-        }
-    }
-
-    compileJava {
-        dependsOn(compileKotlin)
-        mustRunAfter(rebuild)
-        doFirst {
-            options.compilerArgs = listOf(
-                "--module-path", classpath.asPath
-            )
-        }
-    }
-
-    compileKotlin {
-        mustRunAfter(rebuild)
-        destinationDirectory.set(compileJava.get().destinationDirectory)
-    }
-
-    jar {
-        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    }
-}
-
-tasks.withType<KotlinCompile>().configureEach {
-    kotlinOptions {
-        jvmTarget = "16"
-        freeCompilerArgs = freeCompilerArgs + "-Xopt-in=kotlin.RequiresOptIn"
-    }
 }

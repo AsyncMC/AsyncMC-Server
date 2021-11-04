@@ -3,8 +3,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-group = "org.asyncmc.module"
+apply<AsyncMcModule>()
 
 dependencies {
     implementation(rootProject)
+}
+
+kotlin {
+    explicitApi()
 }

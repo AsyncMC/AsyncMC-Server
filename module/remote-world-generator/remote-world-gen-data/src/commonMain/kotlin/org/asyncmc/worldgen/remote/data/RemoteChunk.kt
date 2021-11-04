@@ -1,0 +1,26 @@
+package org.asyncmc.worldgen.remote.data
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+public data class RemoteChunk(
+    val x: Int,
+    val z: Int,
+    val blockLayers: List<RemotePaletteBlockStates>,
+    val blockEntities: List<RemoteEntity>,
+    val entities: List<RemoteEntity>,
+    val biomeMap: RemotePalettedBiomeMap,
+    val blockLight: RemoteLightMap,
+    val skyLight: RemoteLightMap,
+    val heightMapMotionBlocking: RemoteHeightMap,
+    val heightMapMotionBlockingNoLeaves: RemoteHeightMap,
+    val heightMapMotionOceanFloor: RemoteHeightMap,
+    val heightMapMotionOceanFloorForWorldGen: RemoteHeightMap,
+    val heightMapMotionSurface: RemoteHeightMap,
+    val heightMapMotionSurfaceForWorldGen: RemoteHeightMap,
+    val blocksPendingTick: SerializedNbtFile,
+    val liquidPendingTick: SerializedNbtFile,
+    val blocksPendingUpdate: List<BlockPosInsideChunk>,
+    val liquidPendingUpdate: List<BlockPosInsideChunk>,
+    val structures: SerializedNbtFile?,
+)

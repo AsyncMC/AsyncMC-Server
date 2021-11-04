@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "org.asyncmc.worldgen_server.fabric.mixins",
+  "compatibilityLevel": "JAVA_16",
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "mixins": [
+    "ServerNetworkIoMixIn",
+    "MinecraftServerMixIn"
+  ]
+}
