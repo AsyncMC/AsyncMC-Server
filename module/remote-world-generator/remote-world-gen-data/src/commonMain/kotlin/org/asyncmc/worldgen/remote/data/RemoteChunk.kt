@@ -6,6 +6,8 @@ import kotlinx.serialization.Serializable
 public data class RemoteChunk(
     val x: Int,
     val z: Int,
+    val minY: Int,
+    val maxY: Int,
     val blockLayers: List<RemotePaletteBlockStates>,
     val blockEntities: List<RemoteEntity>,
     val entities: List<RemoteEntity>,

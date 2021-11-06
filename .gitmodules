@@ -1,0 +1,3 @@
+[submodule "module/remote-world-generator/remote-world-gen-client-powernukkit/src/main/resources/org/asyncmc/worldgen/remote/client/powernukkit/mappings"]
+	path = module/remote-world-generator/remote-world-gen-client-powernukkit/src/main/resources/org/asyncmc/worldgen/remote/client/powernukkit/mappings
+	url = https://github.com/GeyserMC/mappings.git

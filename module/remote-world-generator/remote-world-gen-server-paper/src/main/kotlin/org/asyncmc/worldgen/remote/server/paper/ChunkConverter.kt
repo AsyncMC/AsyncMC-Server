@@ -49,6 +49,8 @@ object ChunkConverter {
         return RemoteChunk(
             chunk.x,
             chunk.z,
+            chunkNms.minBuildHeight,
+            chunkNms.height,
             convertBlockPalette(chunkNms, blockRegistry),
             chunkNms.tileEntities.entries.map { convertBlockEntity(it, blockEntityRegistry) },
             chunk.entities.map { convertEntity(it, entityRegistry) },
@@ -106,7 +108,7 @@ object ChunkConverter {
     private fun convertBlockPalette(chunk: NMSChunk, blockRegistry: NMSIRegistry<*, NMSBlock>): List<RemotePaletteBlockStates> {
         val states = chunk.sections
             .flatMap { chunkSection ->
-                if (NMSChunkSection.isEmpty(chunkSection)) {
+                if (chunkSection == null || NMSChunkSection.isEmpty(chunkSection)) {
                     emptyChunkSection.asSequence()
                 } else {
                     sequence {

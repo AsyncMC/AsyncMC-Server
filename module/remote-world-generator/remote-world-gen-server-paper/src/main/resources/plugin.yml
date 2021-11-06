@@ -1,5 +1,5 @@
 name: AsyncMcPaperWorldGenServer
-main: org.asyncmc.worldgen_server.paper.AsyncMcPaperWorldGenServer
+main: org.asyncmc.worldgen.remote.server.paper.AsyncMcPaperWorldGenServer
 version: 0.1.0-SNAPSHOT
 load: POSTWORLD
 author: joserobjr

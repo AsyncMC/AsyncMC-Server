@@ -10,7 +10,7 @@ value class NMSChunkSection(override val nms: ChunkSection): NMSWrapper<ChunkSec
     }
 
     companion object {
-        inline fun isEmpty(section: NMSChunkSection): Boolean = isEmpty(section.nms)
-        inline fun isEmpty(section: ChunkSection): Boolean = ChunkSection.a(section)
+        inline fun isEmpty(section: NMSChunkSection?): Boolean = isEmpty(section?.nms)
+        inline fun isEmpty(section: ChunkSection?): Boolean = ChunkSection.a(section)
     }
 }

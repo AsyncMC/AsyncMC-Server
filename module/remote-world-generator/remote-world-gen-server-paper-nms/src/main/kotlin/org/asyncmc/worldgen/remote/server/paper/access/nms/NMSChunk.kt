@@ -14,8 +14,9 @@ value class NMSChunk(val bukkit: BukkitChunk): NMSWrapper<Chunk> {
     inline val tileEntities: Map<NMSBlockPos, NMSTileEntity> get() = nms.tileEntities.entries.associate { (pos, tile) ->
         NMSBlockPos(pos) to NMSTileEntity(tile)
     }
-    inline val sections: List<NMSChunkSection> get() = nms.sections.map { NMSChunkSection(it) }
+    inline val sections: List<NMSChunkSection?> get() = nms.sections.map { it?.let { NMSChunkSection(it) } }
 
+    inline val minBuildHeight: Int get() = nms.minBuildHeight
     inline val height: Int get() = nms.height
 
     inline val biomeArray: NMSBiomeStorage? get() = nms.biomeIndex?.let { NMSBiomeStorage(it) }
