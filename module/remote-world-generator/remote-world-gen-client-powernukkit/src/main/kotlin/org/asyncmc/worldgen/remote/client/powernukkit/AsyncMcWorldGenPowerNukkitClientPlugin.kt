@@ -3,6 +3,7 @@ package org.asyncmc.worldgen.remote.client.powernukkit
 import cn.nukkit.block.Block
 import cn.nukkit.block.BlockID
 import cn.nukkit.block.BlockUnknown
+import cn.nukkit.blockproperty.BooleanBlockProperty
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.level.generator.Generator
 import io.ktor.client.*
@@ -40,6 +41,10 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
     }
 
     private fun loadBlockMappings() {
+        val implicitlyWaterlogged = useResource("$MAPPINGS/../implicitly-waterlogged.txt") { input ->
+            input.bufferedReader().readLines().toSet()
+        }
+
         val rawMappings = useResource("$MAPPINGS/blocks.json") { input ->
             @Suppress("JSON_FORMAT_REDUNDANT")
             Json {
@@ -60,7 +65,7 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
                 RemoteBlockState(id, properties)
             }
         }.mapValues { (remote, mapping) ->
-            val fluid = if (remote.properties["waterlogged"] == "true") {
+            val fluid = if (remote.properties["waterlogged"] == "true" || remote.id in implicitlyWaterlogged) {
                 BlockState.of(BlockID.WATER)
             } else {
                 BlockState.AIR
@@ -80,7 +85,12 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
 
             val main = mapping.bedrockStates?.entries?.fold(baseState) { current, (name, value) ->
                 try {
-                    current.withProperty(name, value.jsonPrimitive.content)
+                    val property = current.getProperty(name)
+                    if (property is BooleanBlockProperty) {
+                        current.withProperty(property, value.jsonPrimitive.content.toBoolean())
+                    } else {
+                        current.withProperty(name, value.jsonPrimitive.content)
+                    }
                 } catch (e: Exception) {
                     log.error(e) {
                         "Could not apply the property $name with value $value to $current for the mapping: $remote -> $mapping"

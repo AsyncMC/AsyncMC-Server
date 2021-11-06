@@ -1,6 +1,5 @@
 package org.asyncmc.worldgen.remote.client.powernukkit
 
-import cn.nukkit.Server
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.level.ChunkManager
 import cn.nukkit.level.Level
@@ -8,6 +7,7 @@ import cn.nukkit.level.generator.Generator
 import cn.nukkit.math.NukkitRandom
 import cn.nukkit.math.Vector3
 import io.ktor.client.request.*
+import io.ktor.features.*
 import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -40,12 +40,12 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
                 Level.DIMENSION_THE_END -> MinecraftDimension.DIMENSION_THE_END
                 else -> error("Unsupported dimension $dimension")
             },
-            name+"_"+level.hashCode().toString(),
-            Server.getInstance().difficulty,
             level.seed,
             options.getOrDefault("generate-structures", true).toString().toBoolean()
         )
     }
+
+    private object SilentRetry: Throwable("Just retrying", null, false, false)
 
     private suspend inline fun <R> keepTrying(
         errorMessage: (Exception)->String = { "An error has occurred, retrying.." },
@@ -57,6 +57,8 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
             try {
                 result = action()
                 break
+            } catch (retry: SilentRetry) {
+                continue
             } catch (e: Exception) {
                 plugin.log.error(e) {
                     errorMessage(e)
@@ -74,8 +76,13 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         if (remoteNameAsync != null) {
             return
         }
+        remoteNameAsync = CoroutineScope(Dispatchers.IO).sendPrepareWorldRequestAsync()
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    protected fun CoroutineScope.sendPrepareWorldRequestAsync(): Deferred<String> {
         val prepareWorldRequest = createWorldPrepareRequest()
-        remoteNameAsync = CoroutineScope(Dispatchers.IO).async {
+        return async {
             keepTrying({ "Could not connect to the world backend: $backend" }) {
                 plugin.httpClient.post<String>("$backend/world/prepare") {
                     contentType(ContentType.Application.ProtoBuf)
@@ -93,8 +100,15 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         val remoteChunkAsync = CoroutineScope(Dispatchers.IO).async {
             val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
             keepTrying({"Could not receive the remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $level"}) {
-                val response = plugin.httpClient.get<ByteArray>("$backend/chunk/create/$remoteWorldName/$chunkX/$chunkZ") {
-                    accept(ContentType.Application.ProtoBuf)
+                val response = try {
+                    plugin.httpClient.get<ByteArray>("$backend/chunk/create/$remoteWorldName/$chunkX/$chunkZ") {
+                        accept(ContentType.Application.ProtoBuf)
+                    }
+                } catch (e: NotFoundException) {
+                    plugin.log.error(e) { "The remote world handler $remoteWorldName is no longer valid, trying to refresh it" }
+                    sendPrepareWorldRequestAsync().await()
+                    plugin.log.info { "The remote world handler was refreshed" }
+                    throw SilentRetry
                 }
                 ProtoBuf.Default.decodeFromByteArray<RemoteChunk>(response)
             }

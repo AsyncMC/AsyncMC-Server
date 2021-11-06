@@ -4,9 +4,7 @@ import io.ktor.application.*
 import io.ktor.http.*
 import io.ktor.response.*
 import io.ktor.routing.*
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
 import kotlinx.coroutines.future.await
 import org.asyncmc.worldgen.remote.data.CreateChunkRequest
 import org.asyncmc.worldgen.remote.data.PrepareWorldRequest
@@ -41,25 +39,26 @@ fun Application.configureRouting(plugin: AsyncMcPaperWorldGenServer) {
 
     routing {
         post<PrepareWorldRequest>("/world/prepare") { request ->
-            val folderAsync = async(Dispatchers.IO) {
-                Files.createTempDirectory(
-                    worldsFolder,
-                    request.name.replace(Regex("[^a-zA-Z0-9_-]"), "X")
-                )
+            val env = when (val id = request.dimension.id) {
+                "minecraft:overworld" -> World.Environment.NORMAL
+                "minecraft:the_nether" -> World.Environment.NETHER
+                "minecraft:the_end" -> World.Environment.THE_END
+                else -> throw UnsupportedOperationException("Dimension type $id is not supported")
             }
-            val folder = folderAsync.await()
+
+            val folder = worldsFolder.resolve("${env.name.lowercase()}_${request.seed}_structures-${request.generateStructures}")
+            worlds[folder.name]?.let {
+                call.respond(folder.name)
+                return@post
+            }
+
             val worldName = worldContainer.relativize(folder).toString().replace('\\', '/')
             val worldCreator = WorldCreator.ofNameAndKey(
                 worldName,
                 NamespacedKey(plugin, folder.name)
             )
 
-            worldCreator.environment(when (val id = request.dimension.id) {
-                "minecraft:overworld" -> World.Environment.NORMAL
-                "minecraft:the_nether" -> World.Environment.NETHER
-                "minecraft:the_end" -> World.Environment.THE_END
-                else -> throw UnsupportedOperationException("Dimension type $id is not supported")
-            })
+            worldCreator.environment()
 
             worldCreator.seed(request.seed)
             worldCreator.generateStructures(request.generateStructures)
@@ -68,9 +67,9 @@ fun Application.configureRouting(plugin: AsyncMcPaperWorldGenServer) {
                 @EventHandler(ignoreCancelled = false, priority = EventPriority.LOWEST)
                 fun onInitWorld(ev: WorldInitEvent) {
                     val world = ev.world
-                    if (world.name == "worldName") {
+                    if (world.name == worldName) {
                         world.keepSpawnInMemory = false
-                        world.difficulty = Difficulty.values()[request.difficulty]
+                        world.difficulty = Difficulty.NORMAL
                         HandlerList.unregisterAll(this)
                     }
                 }
