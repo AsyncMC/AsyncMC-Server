@@ -3,6 +3,7 @@ package org.asyncmc.worldgen.remote.client.powernukkit.entities
 import cn.nukkit.block.BlockID
 import cn.nukkit.block.BlockItemFrame.HAS_MAP
 import cn.nukkit.block.BlockItemFrame.HAS_PHOTO
+import cn.nukkit.blockentity.BlockEntityItemFrame
 import cn.nukkit.blockproperty.CommonBlockProperties.FACING_DIRECTION
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.level.format.generic.BaseFullChunk
@@ -45,7 +46,8 @@ internal class ItemFrameEntityConverter: EntityFactory() {
         if (currentMain == torch) {
             return
         }
-        val itemId = nbt.getCompound("Item").getString("id")
+        val itemTag = nbt.getCompound("Item")
+        val itemId = itemTag.getString("id")
         val state = BlockState.of(BlockID.ITEM_FRAME_BLOCK)
             .withProperty(FACING_DIRECTION, support)
             .withProperty(HAS_MAP, RemoteToPowerNukkitConverter.isMap(itemId))
@@ -55,5 +57,10 @@ internal class ItemFrameEntityConverter: EntityFactory() {
             chunk.setBlockStateAt(cx, cy, cz, 1, water)
         }
         chunk.setBlockStateAt(cx, cy, cz, 0, state)
+        val blockEntity = RemoteToPowerNukkitConverter.createDefaultBlockEntity(state, chunk, cx, cy, cz) as? BlockEntityItemFrame ?: return
+        if (itemId.isBlank() || itemId == "minecraft:air") {
+            return
+        }
+        blockEntity.item = RemoteToPowerNukkitConverter.convertItem(itemTag)
     }
 }

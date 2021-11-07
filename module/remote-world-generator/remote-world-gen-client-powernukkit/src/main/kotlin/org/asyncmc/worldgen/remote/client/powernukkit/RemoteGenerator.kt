@@ -1,7 +1,5 @@
 package org.asyncmc.worldgen.remote.client.powernukkit
 
-import cn.nukkit.block.BlockEntityHolder
-import cn.nukkit.blockentity.BlockEntity
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.level.ChunkManager
 import cn.nukkit.level.Level
@@ -9,7 +7,6 @@ import cn.nukkit.level.format.generic.BaseFullChunk
 import cn.nukkit.level.generator.Generator
 import cn.nukkit.math.NukkitRandom
 import cn.nukkit.math.Vector3
-import cn.nukkit.nbt.tag.CompoundTag
 import io.ktor.client.request.*
 import io.ktor.features.*
 import io.ktor.http.*
@@ -153,42 +150,15 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
                 if (blockState.fluid != BlockState.AIR) {
                     chunk.setBlockStateAtLayer(ix, cy, iz, 1, blockState.fluid)
                 }
-                if (RemoteToPowerNukkitConverter.hasBlockEntity(blockState.main.blockId)) {
-                    try {
-                        createDefaultBlockEntity(blockState.main, chunk, ix, cy, iz)
-                    } catch (e: Exception) {
-                        plugin.log.error(e) {
-                            "Failed to create block entity at chunk (${chunk.x},${chunk.z}) block ($ix,$cy,$iz)"
-                        }
+                try {
+                    RemoteToPowerNukkitConverter.createDefaultBlockEntity(blockState.main, chunk, ix, cy, iz)
+                } catch (e: Exception) {
+                    plugin.log.error(e) {
+                        "Failed to create block entity at chunk (${chunk.x},${chunk.z}) block ($ix,$cy,$iz)"
                     }
                 }
             }
         }
-    }
-
-    private fun createDefaultBlockEntity(
-        blockState: BlockState,
-        chunk: BaseFullChunk,
-        cx: Int,
-        cy: Int,
-        cz: Int
-    ) {
-        val block = blockState.getBlock(
-            null,
-            chunk.x shl 4 + cx,
-            cy,
-            chunk.z shl 4 + cz,
-            0
-        ) as BlockEntityHolder<*>
-        val blockEntityType = block.blockEntityType
-        BlockEntity.createBlockEntity(
-            blockEntityType,
-            chunk,
-            CompoundTag().putString("id", blockEntityType)
-                .putInt("x", block.floorX)
-                .putInt("y", block.floorY)
-                .putInt("z", block.floorZ)
-        )
     }
 
     private fun setBiomes(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {

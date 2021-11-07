@@ -49,7 +49,10 @@ internal abstract class EntityFactory {
             nbt.putBoolean("CustomNameVisible", entityNbt.getBoolean("CustomNameVisible"))
         }
         if (adjustNbt(remoteChunk, remoteEntity, nukkitId, chunk, entityNbt, nbt)) {
-            Entity.createEntity(nukkitId, chunk, nbt)
+            val entity = Entity.createEntity(nukkitId, chunk, nbt)
+            if (entity == null) {
+                unknownEntities += nukkitId
+            }
         }
     }
 

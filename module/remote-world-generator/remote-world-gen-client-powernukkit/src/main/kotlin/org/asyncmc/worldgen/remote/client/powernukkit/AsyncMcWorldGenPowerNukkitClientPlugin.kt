@@ -5,6 +5,7 @@ import cn.nukkit.block.BlockID
 import cn.nukkit.block.BlockUnknown
 import cn.nukkit.blockproperty.BooleanBlockProperty
 import cn.nukkit.blockstate.BlockState
+import cn.nukkit.item.Item
 import cn.nukkit.level.biome.Biome
 import cn.nukkit.level.biome.EnumBiome
 import cn.nukkit.level.generator.Generator
@@ -48,6 +49,8 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         Generator.addGenerator(RemoteTheEndGenerator::class.java, RemoteTheEndGenerator.NAME, 0)
 
         RemoteToPowerNukkitConverter.detectBlockStatesWithEntity()
+        loadEnchantmentMappings()
+        loadItemMappings()
         loadBiomeMappings()
         loadBlockMappings()
         loadEntityMappings()
@@ -110,6 +113,34 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             map["bedrock_id"]!!.toUByte()
         }
         RemoteToPowerNukkitConverter.addBiomeMappings(mappings)
+    }
+
+    private fun loadEnchantmentMappings() {
+        val mappings = useResource("$MAPPINGS/../enchantments.txt") { input ->
+            input.bufferedReader().lineSequence()
+                .filter { it.isNotBlank() }
+                .map { it.split(':', limit = 2) }
+                .map { (java, nukkit) -> "minecraft:$java" to nukkit.toInt() }
+                .filter { (_, nukkit) -> nukkit >= 0 }
+                .associate { (java, nukkit) -> java to nukkit }
+        }
+        RemoteToPowerNukkitConverter.addEnchantmentMappings(mappings)
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun loadItemMappings() {
+        val rawMapping = useResource("$MAPPINGS/items.json") { input ->
+            @Suppress("JSON_FORMAT_REDUNDANT")
+            Json {
+                ignoreUnknownKeys = true
+            }.decodeFromStream<Map<String, ItemMapping>>(input)
+        }
+
+        val mappings = rawMapping.mapValues { (_, mapping) ->
+            RemoteToPowerNukkitConverter.ItemIdData(Item.fromString(mapping.bedrockIdentifier).id, mapping.bedrockData)
+        }
+
+        RemoteToPowerNukkitConverter.addItemMappings(mappings)
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -245,6 +276,14 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         val bedrockIdentifier: String,
         @SerialName("bedrock_states")
         val bedrockStates: JsonObject? = null
+    )
+
+    @Serializable
+    internal data class ItemMapping(
+        @SerialName("bedrock_identifier")
+        val bedrockIdentifier: String,
+        @SerialName("bedrock_data")
+        val bedrockData: Int,
     )
 
     companion object {
