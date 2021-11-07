@@ -12,10 +12,7 @@ import org.asyncmc.worldgen.remote.data.RemoteChunk
 import org.asyncmc.worldgen.remote.server.paper.AsyncMcPaperWorldGenServer
 import org.asyncmc.worldgen.remote.server.paper.ChunkConverter
 import org.asyncmc.worldgen.remote.server.paper.callSync
-import org.bukkit.Difficulty
-import org.bukkit.NamespacedKey
-import org.bukkit.World
-import org.bukkit.WorldCreator
+import org.bukkit.*
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.HandlerList
@@ -24,6 +21,7 @@ import org.bukkit.event.world.WorldInitEvent
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.name
+import kotlin.system.measureTimeMillis
 
 @Suppress("EXPERIMENTAL_IS_NOT_ENABLED")
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -95,21 +93,40 @@ fun Application.configureRouting(plugin: AsyncMcPaperWorldGenServer) {
         }
 
         get("/chunk/create/{worldId}/{x}/{z}") {
-            val request = CreateChunkRequest(
-                x = requireNotNull(call.parameters["x"]).toInt(),
-                z = requireNotNull(call.parameters["z"]).toInt(),
-                worldId = requireNotNull(call.parameters["worldId"]),
-            )
-            val world = worlds[request.worldId]
+            val request: CreateChunkRequest
+            val world: World?
+            var time = measureTimeMillis {
+                request = CreateChunkRequest(
+                    x = requireNotNull(call.parameters["x"]).toInt(),
+                    z = requireNotNull(call.parameters["z"]).toInt(),
+                    worldId = requireNotNull(call.parameters["worldId"]),
+                )
+                world = worlds[request.worldId]
+            }
             if (world == null) {
                 call.response.status(HttpStatusCode.NotFound)
                 return@get
             }
-            val chunk = world.getChunkAtAsync(request.x, request.z).await()
-            val remoteChunk: RemoteChunk = ChunkConverter.convert(chunk)
-            server.scheduler.runTask(plugin, Runnable {
-                chunk.unload()
-            })
+            log.info("Initial handling took $time ms")
+            val chunk: Chunk
+            time = measureTimeMillis {
+                chunk = world.getChunkAtAsync(request.x, request.z).await()
+            }
+            log.info("Chunk loading/creating took $time ms")
+            val queryParameters = call.request.queryParameters
+            val remoteChunk: RemoteChunk
+            time = measureTimeMillis {
+                remoteChunk = ChunkConverter.convert(
+                    chunk,
+                    queryParameters["heightMaps"].toBoolean(),
+                    queryParameters["lightMaps"].toBoolean(),
+                    queryParameters["structures"].toBoolean(),
+                )
+                server.scheduler.runTask(plugin, Runnable {
+                    chunk.unload()
+                })
+            }
+            log.info("Chunk conversion took $time ms")
             call.respond(remoteChunk)
         }
     }

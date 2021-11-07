@@ -20,6 +20,10 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.jsonPrimitive
 import org.asyncmc.worldgen.remote.client.powernukkit.RemoteToPowerNukkitConverter.LayeredBlockState
 import org.asyncmc.worldgen.remote.client.powernukkit.biomes.*
+import org.asyncmc.worldgen.remote.client.powernukkit.entities.EndCrystalEntityFactory
+import org.asyncmc.worldgen.remote.client.powernukkit.entities.GenericEntityFactory
+import org.asyncmc.worldgen.remote.client.powernukkit.entities.GiantEntityFactory
+import org.asyncmc.worldgen.remote.client.powernukkit.entities.ItemFrameEntityConverter
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
 import org.powernukkit.plugins.kotlin.KotlinPluginBase
 import java.io.FileNotFoundException
@@ -46,6 +50,24 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         RemoteToPowerNukkitConverter.detectBlockStatesWithEntity()
         loadBiomeMappings()
         loadBlockMappings()
+        loadEntityMappings()
+    }
+
+    private fun loadEntityMappings() {
+        val factories = useResource("$MAPPINGS/../entities.txt") { input ->
+            input.bufferedReader().lineSequence()
+                .filter { it.isNotBlank() }
+                .map { it.split(':', limit = 2) }
+                .associate { (remoteId, nukkitId) -> "minecraft:$remoteId" to nukkitId.takeIf { it.isNotBlank() } }
+                .mapValues { (_, nukkitId) -> GenericEntityFactory(nukkitId) }
+        }
+        RemoteToPowerNukkitConverter.addEntityFactories(factories)
+        sequenceOf(
+            "giant" to GiantEntityFactory(),
+            "item_frame" to ItemFrameEntityConverter(),
+            "end_crystal" to EndCrystalEntityFactory(),
+        ).associate { (id, factory) -> "minecraft:$id" to factory }
+            .also { RemoteToPowerNukkitConverter.addEntityFactories(it) }
     }
 
     private fun registerBiomes() {

@@ -120,6 +120,21 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
 
         setBiomes(remoteChunk, chunk)
         setBlockStates(remoteChunk, chunk)
+        if (remoteChunk.entities.isNotEmpty()) {
+            createEntities(remoteChunk, chunk)
+        }
+    }
+
+    private fun createEntities(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {
+        remoteChunk.entities.forEach { remoteEntity ->
+            try {
+                RemoteToPowerNukkitConverter.createNukkitEntity(remoteChunk, chunk, remoteEntity)
+            } catch (e: Exception) {
+                plugin.log.error(e) {
+                    "Failed to create the entity $remoteEntity"
+                }
+            }
+        }
     }
 
     private fun setBlockStates(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {
@@ -177,26 +192,17 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
     }
 
     private fun setBiomes(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {
-        //val chunkBiomes = chunk.biomeIdArray
         val firstIndex = ((64 - remoteChunk.minY)/4) shl 4 // Only mapping biomes at height 64
         remoteChunk.biomeMap.subList(firstIndex, firstIndex + (4*4)).forEachIndexed { index, biome ->
             val nukkitId = RemoteToPowerNukkitConverter.convertBiomeId(biome, fallbackBiome).toByte()
             val ix = (index and 0x3) * 4
             val iz = (index ushr 2 and 0x3) * 4
-            val iy = (index ushr 4) * 4
-            //for (y in iy..iy+3) {
-                for (x in ix..ix+3) {
-                    for (z in iz..iz+3) {
-                        //val nukkitIndex = (z and 0xF) or (x and 0xF shl 4)
-                        //chunkBiomes[nukkitIndex] = nukkitId
-                        //chunk.setBiomeId(x, y, z, nukkitId)
-                        chunk.setBiomeId(x, z, nukkitId)
-                        //chunk.setBiome(x, z, EnumBiome.HELL.biome)
-                    }
+            for (x in ix..ix+3) {
+                for (z in iz..iz+3) {
+                    chunk.setBiomeId(x, z, nukkitId)
                 }
-            //}
+            }
         }
-        chunk.setChanged()
     }
 
     override fun populateChunk(chunkX: Int, chunkZ: Int) {

@@ -6,8 +6,12 @@ import cn.nukkit.block.BlockID
 import cn.nukkit.blockproperty.BooleanBlockProperty
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.blockstate.BlockStateRegistry
+import cn.nukkit.level.format.generic.BaseFullChunk
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet
+import org.asyncmc.worldgen.remote.client.powernukkit.entities.EntityFactory
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
+import org.asyncmc.worldgen.remote.data.RemoteChunk
+import org.asyncmc.worldgen.remote.data.RemoteEntity
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.full.createInstance
 import kotlin.reflect.full.isSubclassOf
@@ -19,6 +23,8 @@ internal object RemoteToPowerNukkitConverter {
     private val biomeIds = ConcurrentHashMap<String, UByte>()
 
     private val blocksWithEntity = IntOpenHashSet()
+
+    private val entityFactories = hashMapOf<String, EntityFactory>()
 
     fun convert(blockState: RemoteBlockState): LayeredBlockState {
         return blockStateCache.computeIfAbsent(blockState) { state ->
@@ -49,6 +55,10 @@ internal object RemoteToPowerNukkitConverter {
             .forEach {
                 blocksWithEntity.add(it.id)
             }
+    }
+
+    internal fun addEntityFactories(factories: Map<String, EntityFactory>) {
+        entityFactories += factories
     }
 
     internal fun addToBlockCache(mappings: Map<RemoteBlockState, LayeredBlockState>) {
@@ -90,6 +100,20 @@ internal object RemoteToPowerNukkitConverter {
 
     fun hasBlockEntity(blockId: Int): Boolean {
         return blocksWithEntity.contains(blockId)
+    }
+
+    fun isMap(itemId: String): Boolean {
+        return itemId == "minecraft:filled_map"
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    fun isPhoto(itemId: String): Boolean {
+        return false
+    }
+
+    fun createNukkitEntity(remoteChunk: RemoteChunk, chunk: BaseFullChunk, remoteEntity: RemoteEntity) {
+        val factory = entityFactories[remoteEntity.id] ?: return
+        factory.createEntity(remoteChunk, remoteEntity, chunk)
     }
 
     internal data class LayeredBlockState(

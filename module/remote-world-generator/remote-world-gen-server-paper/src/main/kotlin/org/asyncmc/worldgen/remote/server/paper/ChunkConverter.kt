@@ -4,6 +4,7 @@ import br.com.gamemods.nbtmanipulator.NbtFile
 import br.com.gamemods.nbtmanipulator.NbtLongArray
 import org.asyncmc.worldgen.remote.data.*
 import org.asyncmc.worldgen.remote.server.paper.access.nms.*
+import org.bukkit.Bukkit
 import org.bukkit.Chunk
 import org.bukkit.entity.Entity
 import br.com.gamemods.nbtmanipulator.NbtCompound as OurNbtCompound
@@ -22,16 +23,16 @@ object ChunkConverter {
         }
     }.toList()
 
-    fun convert(chunk: Chunk): RemoteChunk {
+    val registryNms = Bukkit.getServer().asWrappedNMS().registryManager
+    val blockEntityRegistry: NMSIRegistry<*, NMSTileEntityTypes<*>> = registryNms[RegistryAccess.BLOCK_ENTITY_TYPE_REGISTRY]
+    val entityRegistry: NMSIRegistry<*, NMSEntityTypes<*>> = registryNms[RegistryAccess.ENTITY_TYPE_REGISTRY]
+    val blockRegistry: NMSIRegistry<*, NMSBlock> = registryNms[RegistryAccess.BLOCK_REGISTRY]
+    val biomeRegistry: NMSIRegistry<*, NMSBiomeBase> = registryNms[RegistryAccess.BIOME_REGISTRY]
+
+    fun convert(chunk: Chunk, includeHeightMaps: Boolean, includeLightMaps: Boolean, includeStructures: Boolean): RemoteChunk {
         val chunkNms = chunk.asWrappedNMS()
         val worldNms = chunk.world.asWrappedNMS()
-        val serverNms = worldNms.server.asWrappedNMS()
-        val registryNms = serverNms.registryManager
 
-        val blockEntityRegistry: NMSIRegistry<*, NMSTileEntityTypes<*>> = registryNms[RegistryAccess.BLOCK_ENTITY_TYPE_REGISTRY]
-        val entityRegistry: NMSIRegistry<*, NMSEntityTypes<*>> = registryNms[RegistryAccess.ENTITY_TYPE_REGISTRY]
-        val blockRegistry: NMSIRegistry<*, NMSBlock> = registryNms[RegistryAccess.BLOCK_REGISTRY]
-        val biomeRegistry: NMSIRegistry<*, NMSBiomeBase> = registryNms[RegistryAccess.BIOME_REGISTRY]
 
         /*val chunkProvider = object : ChunkProvider {
             override fun getChunk(chunkX: Int, chunkZ: Int): BlockView? {
@@ -55,27 +56,28 @@ object ChunkConverter {
             chunkNms.tileEntities.entries.map { convertBlockEntity(it, blockEntityRegistry) },
             chunk.entities.map { convertEntity(it, entityRegistry) },
             convertBiomes(checkNotNull(chunkNms.biomeArray), biomeRegistry),
-            RemoteLightMap(intArrayOf()),//convertLightMap(chunk, blockLightProvider),
-            RemoteLightMap(intArrayOf()),//convertLightMap(chunk, skyLightProvider),
-            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.MOTION_BLOCKING), chunkHeightElementBits),
-            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.MOTION_BLOCKING_NO_LEAVES), chunkHeightElementBits),
-            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.OCEAN_FLOOR), chunkHeightElementBits),
-            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.OCEAN_FLOOR_WG), chunkHeightElementBits),
-            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.WORLD_SURFACE), chunkHeightElementBits),
-            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.WORLD_SURFACE_WG), chunkHeightElementBits),
+            if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, blockLightProvider),
+            if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, skyLightProvider),
+            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.MOTION_BLOCKING), chunkHeightElementBits) else null,
+            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.MOTION_BLOCKING_NO_LEAVES), chunkHeightElementBits) else null,
+            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.OCEAN_FLOOR), chunkHeightElementBits) else null,
+            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.OCEAN_FLOOR_WG), chunkHeightElementBits) else null,
+            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.WORLD_SURFACE), chunkHeightElementBits) else null,
+            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.WORLD_SURFACE_WG), chunkHeightElementBits) else null,
             convertBlockTickSchedule(chunkNms.blockTickScheduler),
             convertFluidTickSchedule(chunkNms.fluidTickScheduler),
             emptyList(),
             emptyList(),
-            NbtFile("asyncmc:structures", OurNbtCompound().also { structures ->
-                structures["START"] = OurNbtCompound(chunkNms.structureStarts.entries.map { (feature, start) ->
-                    feature.name to start.toNbt(worldNms, chunkNms.pos)
-                        .toSerializedNbtFile().deserialize().compound
-                })
-                structures["REFERENCES"] = OurNbtCompound(chunkNms.structureReferences.entries.map { (feature, ref) ->
-                    feature.name to NbtLongArray(ref.toLongArray())
-                })
-            }).serialize()
+            if (!includeStructures) null else
+                NbtFile("asyncmc:structures", OurNbtCompound().also { structures ->
+                    structures["START"] = OurNbtCompound(chunkNms.structureStarts.entries.map { (feature, start) ->
+                        feature.name to start.toNbt(worldNms, chunkNms.pos)
+                            .toSerializedNbtFile().deserialize().compound
+                    })
+                    structures["REFERENCES"] = OurNbtCompound(chunkNms.structureReferences.entries.map { (feature, ref) ->
+                        feature.name to NbtLongArray(ref.toLongArray())
+                    })
+                }).serialize()
         )
     }
 
@@ -170,6 +172,7 @@ object ChunkConverter {
     }
 
     private fun convertHeightMap(heightmap: NMSHeightMap, chunkHeightElementBits: Int): RemoteHeightMap {
+
         val data = IntArray(16*16)
         NMSDataBits(
             chunkHeightElementBits,
