@@ -117,10 +117,12 @@ fun Application.configureRouting(plugin: AsyncMcPaperWorldGenServer) {
             val remoteChunk: RemoteChunk
             time = measureTimeMillis {
                 remoteChunk = ChunkConverter.convert(
+                    plugin,
                     chunk,
                     queryParameters["heightMaps"].toBoolean(),
                     queryParameters["lightMaps"].toBoolean(),
                     queryParameters["structures"].toBoolean(),
+                    queryParameters["openTreasures"].toBoolean(),
                 )
                 server.scheduler.runTask(plugin, Runnable {
                     chunk.unload()

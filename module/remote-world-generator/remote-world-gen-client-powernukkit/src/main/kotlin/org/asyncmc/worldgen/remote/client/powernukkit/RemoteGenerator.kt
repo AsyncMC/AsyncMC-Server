@@ -99,7 +99,7 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
             val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
             keepTrying({"Could not receive the remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $level"}) {
                 val response = try {
-                    plugin.httpClient.get<ByteArray>("$backend/chunk/create/$remoteWorldName/$chunkX/$chunkZ") {
+                    plugin.httpClient.get<ByteArray>("$backend/chunk/create/$remoteWorldName/$chunkX/$chunkZ?openTreasures=true") {
                         accept(ContentType.Application.ProtoBuf)
                     }
                 } catch (e: NotFoundException) {
@@ -117,8 +117,23 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
 
         setBiomes(remoteChunk, chunk)
         setBlockStates(remoteChunk, chunk)
+        if (remoteChunk.blockEntities.isNotEmpty()) {
+            createBlockEntities(remoteChunk, chunk)
+        }
         if (remoteChunk.entities.isNotEmpty()) {
             createEntities(remoteChunk, chunk)
+        }
+    }
+
+    private fun createBlockEntities(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {
+        remoteChunk.blockEntities.forEach { remoteBlockEntity ->
+            try {
+                RemoteToPowerNukkitConverter.convertBlockEntity(remoteChunk, chunk, remoteBlockEntity)
+            } catch (e: Exception) {
+                plugin.log.error(e) {
+                    "Failed to create the block entity $remoteBlockEntity"
+                }
+            }
         }
     }
 

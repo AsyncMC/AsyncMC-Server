@@ -7,6 +7,7 @@ import cn.nukkit.blockentity.BlockEntity
 import cn.nukkit.blockproperty.BooleanBlockProperty
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.blockstate.BlockStateRegistry
+import cn.nukkit.inventory.InventoryHolder
 import cn.nukkit.item.Item
 import cn.nukkit.item.ItemID
 import cn.nukkit.item.ItemPotion
@@ -19,7 +20,6 @@ import cn.nukkit.potion.Effect
 import cn.nukkit.utils.DyeColor
 import cn.nukkit.utils.ServerException
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
-import it.unimi.dsi.fastutil.ints.IntOpenHashSet
 import org.asyncmc.worldgen.remote.client.powernukkit.entities.EntityFactory
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
 import org.asyncmc.worldgen.remote.data.RemoteChunk
@@ -34,7 +34,7 @@ internal object RemoteToPowerNukkitConverter {
 
     private val biomeIds = ConcurrentHashMap<String, UByte>()
 
-    private val blocksWithEntity = IntOpenHashSet()
+    private val blocksWithEntity = Int2ObjectOpenHashMap<String>()
 
     private val entityFactories = hashMapOf<String, EntityFactory>()
 
@@ -77,8 +77,10 @@ internal object RemoteToPowerNukkitConverter {
             .filter { BlockEntityHolder::class.isSuperclassOf(it) }
             .map { it.createInstance() }
             .forEach {
-                blocksWithEntity.add(it.id)
+                blocksWithEntity[it.id] = (it as BlockEntityHolder<*>).blockEntityType
             }
+
+        blocksWithEntity[BlockID.BREWING_STAND_BLOCK] = BlockEntity.BREWING_STAND
     }
 
     internal fun addItemMappings(mappings: Map<String, ItemIdData>) {
@@ -130,10 +132,6 @@ internal object RemoteToPowerNukkitConverter {
         return biomeIds.getOrDefault(biome, fallback)
     }
 
-    private fun hasBlockEntity(blockId: Int): Boolean {
-        return blocksWithEntity.contains(blockId)
-    }
-
     fun isMap(itemId: String): Boolean {
         return itemId == "minecraft:filled_map"
     }
@@ -151,25 +149,48 @@ internal object RemoteToPowerNukkitConverter {
         cz: Int,
         nbt: CompoundTag = CompoundTag()
     ): BlockEntity? {
-        if (!hasBlockEntity(blockState.blockId)) {
-            return null
-        }
-        val block = blockState.getBlock(
-            null,
-            (chunk.x shl 4) + cx,
-            cy,
-            (chunk.z shl 4) + cz,
-            0
-        ) as BlockEntityHolder<*>
-        val blockEntityType = block.blockEntityType
+        val blockEntityType = blocksWithEntity[blockState.blockId] ?: return null
+        val bx = (chunk.x shl 4) + cx
+        val bz = (chunk.z shl 4) + cz
         return BlockEntity.createBlockEntity(
             blockEntityType,
             chunk,
             nbt.putString("id", blockEntityType)
-                .putInt("x", block.floorX)
-                .putInt("y", block.floorY)
-                .putInt("z", block.floorZ)
-        )
+                .putInt("x", bx)
+                .putInt("y", cy)
+                .putInt("z", bz)
+        ).also {
+            if (it == null) {
+                plugin.log.error { "Could not create the block entity for $blockState" }
+            } else {
+                chunk.addBlockEntity(it)
+            }
+        }
+    }
+
+    fun convertBlockEntity(remoteChunk: RemoteChunk, chunk: BaseFullChunk, remoteBlockEntity: RemoteEntity) {
+        // Assume that it was already created with default state, let's apply the remote state to them
+        val x = remoteBlockEntity.x.toInt()
+        val y = remoteBlockEntity.y.toInt()
+        val z = remoteBlockEntity.z.toInt()
+        val entity = chunk.getTile(x and 0xF, y, z and 0xF)
+        if (entity == null) {
+            plugin.log.warn {
+                "Expected a block entity to be at x:$x y:$y z:$z to convert ${remoteBlockEntity.id}, but it was not there"
+            }
+            return
+        }
+        val entityNbt = remoteBlockEntity.nbt.deserializeForNukkit()
+        if (entity is InventoryHolder && entityNbt.containsList("Items", Tag.TAG_Compound)) {
+            val inventory = entity.inventory
+            val inventoryTag = entityNbt.getList("Items", CompoundTag::class.java)
+            for (i in 0 until inventoryTag.size()) {
+                val itemTag = inventoryTag[i]
+                val slot = itemTag.getByte("Slot")
+                val item = convertItem(itemTag) ?: continue
+                inventory.setItem(slot, item)
+            }
+        }
     }
 
     fun createNukkitEntity(remoteChunk: RemoteChunk, chunk: BaseFullChunk, remoteEntity: RemoteEntity) {
