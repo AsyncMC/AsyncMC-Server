@@ -181,15 +181,20 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         val firstIndex = ((64 - remoteChunk.minY)/4) shl 4 // Only mapping biomes at height 64
         remoteChunk.biomeMap.subList(firstIndex, firstIndex + (4*4)).forEachIndexed { index, biome ->
             val nukkitId = RemoteToPowerNukkitConverter.convertBiomeId(biome, fallbackBiome).toByte()
-            val iz = index and 0x3
-            val ix = index ushr 2 and 0x3
-            for (z in iz..iz+3) {
+            val ix = (index and 0x3) * 4
+            val iz = (index ushr 2 and 0x3) * 4
+            val iy = (index ushr 4) * 4
+            //for (y in iy..iy+3) {
                 for (x in ix..ix+3) {
-                    //val nukkitIndex = (z and 0xF) or (x and 0xF shl 4)
-                    //chunkBiomes[nukkitIndex] = nukkitId
-                    chunk.setBiomeId(x, z, nukkitId)
+                    for (z in iz..iz+3) {
+                        //val nukkitIndex = (z and 0xF) or (x and 0xF shl 4)
+                        //chunkBiomes[nukkitIndex] = nukkitId
+                        //chunk.setBiomeId(x, y, z, nukkitId)
+                        chunk.setBiomeId(x, z, nukkitId)
+                        //chunk.setBiome(x, z, EnumBiome.HELL.biome)
+                    }
                 }
-            }
+            //}
         }
         chunk.setChanged()
     }
