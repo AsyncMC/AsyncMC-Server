@@ -14,7 +14,7 @@ repositories {
 
 dependencies {
     implementation("org.powernukkit:powernukkit:1.5.2.0-PN-SNAPSHOT")
-    implementation("org.powernukkit.plugins:kotlin-plugin-lib:1.5.31+0.1.0+2021.10.5-SNAPSHOT")
+    implementation("org.powernukkit.plugins:kotlin-plugin-lib:1.5.31+0.1.0+2021.10.6-SNAPSHOT")
     implementation("org.asyncmc:remote-world-gen-data:0.1.0-SNAPSHOT")
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-serialization:$ktorVersion")

@@ -45,6 +45,23 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             input.bufferedReader().readLines().toSet()
         }
 
+        val replacements = useResource("$MAPPINGS/../id-replacements.txt") { input ->
+            input.bufferedReader().lineSequence()
+                .filter { it.isNotBlank() }
+                .map { it.split(':', limit = 2) }
+                .associate { (key, replacement) ->
+                    "minecraft:$key" to if (';' !in replacement) {
+                        IdReplacement("minecraft:$replacement")
+                    } else {
+                        val propsKV = replacement.split(';')
+                        val props = propsKV.asSequence().drop(1)
+                            .map { it.split('=', limit = 2) }
+                            .associate { (k, v) -> k to v }
+                        IdReplacement("minecraft:" + propsKV.first(), props)
+                    }
+                }
+        }
+
         val rawMappings = useResource("$MAPPINGS/blocks.json") { input ->
             @Suppress("JSON_FORMAT_REDUNDANT")
             Json {
@@ -71,15 +88,39 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
                 BlockState.AIR
             }
 
+            val replaced: Boolean
+
             val baseState = try {
-                BlockState.of(mapping.bedrockIdentifier).also {
+                if (remote.id == "minecraft:raw_iron_block") {
+                    println("tracking")
+                }
+                val replacement = replacements[remote.id]
+                replaced = replacement != null
+                val bedrockId = (replacement?.id ?: mapping.bedrockIdentifier).lowercase()
+                val initialProps = replacement?.properties ?: emptyMap()
+                val initialState = BlockState.of(bedrockId).also {
                     @Suppress("DEPRECATION")
                     require(it.blockId < Block.MAX_BLOCK_ID && it.block !is BlockUnknown) {
-                        "The block $mapping is not implemented by this version of PowerNukkit"
+                        "The block $mapping ($replacement) is not implemented by this version of PowerNukkit"
                     }
                 }
-            } catch (e: Exception) {
-                log.error(e) { "Unsupported block mapping for $remote -> $mapping" }
+                initialProps.entries.fold(initialState) { current, (name, value) ->
+                    try {
+                        val property = current.getProperty(name)
+                        if (property is BooleanBlockProperty) {
+                            current.withProperty(property, value.toBoolean())
+                        } else {
+                            current.withProperty(name, value)
+                        }
+                    } catch (e: Exception) {
+                        log.error(e) {
+                            "Could not apply the property $name with value $value to $current for the mapping: $remote -> $mapping ($replacement)"
+                        }
+                        current
+                    }
+                }
+            } catch (_: Exception) {
+                log.error { "Unsupported block mapping for $remote -> $mapping" }
                 return@mapValues LayeredBlockState(BlockState.of(BlockID.STONE))
             }
 
@@ -88,18 +129,31 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
                     val property = current.getProperty(name)
                     if (property is BooleanBlockProperty) {
                         current.withProperty(property, value.jsonPrimitive.content.toBoolean())
+                    } else if (name == "coral_hang_type_bit") {
+                        val int = if (value.jsonPrimitive.content == "true") 1 else 0
+                        val persistence = property.getPersistenceValueForMeta(int)
+                        current.withProperty(name, persistence)
                     } else {
                         current.withProperty(name, value.jsonPrimitive.content)
                     }
                 } catch (e: Exception) {
-                    log.error(e) {
+                    val msg = {
                         "Could not apply the property $name with value $value to $current for the mapping: $remote -> $mapping"
+                    }
+                    if (replaced) {
+                        log.debug(e, msg)
+                    } else {
+                        log.error(msg)
                     }
                     current
                 }
             } ?: baseState
 
-            LayeredBlockState(main, fluid)
+            if (main == BlockState.AIR) {
+                LayeredBlockState(fluid, main)
+            } else {
+                LayeredBlockState(main, fluid)
+            }
         }
         RemoteToPowerNukkitConverter.addToCache(mappings)
     }
@@ -109,6 +163,8 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             throw FileNotFoundException(filename)
         }.use(block)
     }
+
+    private data class IdReplacement(val id: String, val properties: Map<String, String> = emptyMap())
 
     @Serializable
     internal data class BlockMapping(
