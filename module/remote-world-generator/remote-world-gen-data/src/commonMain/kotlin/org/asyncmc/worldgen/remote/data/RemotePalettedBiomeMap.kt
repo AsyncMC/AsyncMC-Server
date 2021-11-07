@@ -6,9 +6,15 @@ import kotlinx.serialization.Serializable
 public data class RemotePalettedBiomeMap(
     val biomes: List<String>,
     val data: IntArray,
-) {
+): AbstractList<String>() {
     private constructor(palette: List<String>, data: List<String>): this(palette, data.map { palette.indexOf(it) }.toIntArray())
     public constructor(data: List<String>): this(data.distinct(), data)
+
+    override val size: Int get() = data.size
+
+    override fun get(index: Int): String {
+        return biomes[data[index]]
+    }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

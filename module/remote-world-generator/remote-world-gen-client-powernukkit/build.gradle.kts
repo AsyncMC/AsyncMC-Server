@@ -5,7 +5,6 @@ plugins {
 }
 
 val ktorVersion = "1.6.4"
-val logbackVersion = "1.2.3"
 
 repositories {
     mavenCentral()
@@ -20,7 +19,6 @@ dependencies {
     implementation("io.ktor:ktor-serialization:$ktorVersion")
     implementation("io.ktor:ktor-auth:$ktorVersion")
     implementation("io.ktor:ktor-server-cio:$ktorVersion")
-    implementation("ch.qos.logback:logback-classic:$logbackVersion")
     implementation("io.ktor:ktor-metrics-micrometer:$ktorVersion")
     implementation("io.micrometer:micrometer-registry-prometheus:1.7.1")
 }

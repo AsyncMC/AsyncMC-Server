@@ -5,17 +5,21 @@ import cn.nukkit.block.BlockID
 import cn.nukkit.block.BlockUnknown
 import cn.nukkit.blockproperty.BooleanBlockProperty
 import cn.nukkit.blockstate.BlockState
+import cn.nukkit.level.biome.Biome
+import cn.nukkit.level.biome.EnumBiome
 import cn.nukkit.level.generator.Generator
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.http.*
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.jsonPrimitive
 import org.asyncmc.worldgen.remote.client.powernukkit.RemoteToPowerNukkitConverter.LayeredBlockState
+import org.asyncmc.worldgen.remote.client.powernukkit.biomes.*
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
 import org.powernukkit.plugins.kotlin.KotlinPluginBase
 import java.io.FileNotFoundException
@@ -29,6 +33,8 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
     override fun onEnable() {
         saveDefaultConfig()
         reloadConfig()
+        registerBiomes()
+
         backend = Url(requireNotNull(config.getString("default-backend")) {
             "No default world backend was defined, the AsyncMc Remote World Generation plugin cannot continue."
         })
@@ -37,9 +43,54 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         Generator.addGenerator(RemoteNetherGenerator::class.java, RemoteNetherGenerator.NAME, 0)
         Generator.addGenerator(RemoteTheEndGenerator::class.java, RemoteTheEndGenerator.NAME, 0)
 
+        RemoteToPowerNukkitConverter.detectBlockStatesWithEntity()
+        loadBiomeMappings()
         loadBlockMappings()
     }
 
+    private fun registerBiomes() {
+        sequenceOf(
+            9 to TheEndBiome(),
+            13 to SnowyMountainsBiome(),
+            40 to WarmOceanBiome(),
+            41 to LukewarmOceanBiome(),
+            42 to ColdOceanBiome(),
+            43 to DeepWarmOceanBiome(),
+            44 to DeepLukewarmOceanBiome(),
+            45 to DeepColdOceanBiome(),
+            46 to DeepFrozenOceanBiome(),
+            47 to LegacyFrozenOceanBiome(),
+            161 to GiantSpruceTaigaHillsBiome(),
+            168 to BambooJungleBiome(),
+            169 to BambooJungleHillsBiome(),
+            178 to SoulSandForestBiome(),
+            179 to CrimsonForestBiome(),
+            180 to WarpedForestBiome(),
+            181 to BasaltDeltasBiome(),
+        ).forEach { (id, biome) ->
+            registerBiomeIfAbsent(id, biome)
+        }
+    }
+
+    private fun registerBiomeIfAbsent(id: Int, biome: Biome) {
+        val registered = Biome.getBiome(id)
+        if (registered !== EnumBiome.OCEAN.biome || id == registered.id) {
+            return
+        }
+        BiomeRegisterer.registerBiome(id, biome)
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun loadBiomeMappings() {
+        val mappings = useResource("$MAPPINGS/biomes.json") { input ->
+            Json.Default.decodeFromStream<Map<String, Map<String, Int>>>(input)
+        }.mapValues { (_, map) ->
+            map["bedrock_id"]!!.toUByte()
+        }
+        RemoteToPowerNukkitConverter.addBiomeMappings(mappings)
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
     private fun loadBlockMappings() {
         val implicitlyWaterlogged = useResource("$MAPPINGS/../implicitly-waterlogged.txt") { input ->
             input.bufferedReader().readLines().toSet()
@@ -66,7 +117,7 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             @Suppress("JSON_FORMAT_REDUNDANT")
             Json {
                 ignoreUnknownKeys = true
-            }.decodeFromString<Map<String, BlockMapping>>(input.bufferedReader().readText())
+            }.decodeFromStream<Map<String, BlockMapping>>(input)
         }
         val mappings = rawMappings.mapKeys { (key) ->
             val openIndex = key.indexOf('[')
@@ -155,7 +206,7 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
                 LayeredBlockState(main, fluid)
             }
         }
-        RemoteToPowerNukkitConverter.addToCache(mappings)
+        RemoteToPowerNukkitConverter.addToBlockCache(mappings)
     }
 
     private inline fun <R> useResource(filename: String, block: (InputStream) -> R): R {

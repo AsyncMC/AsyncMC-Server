@@ -7,6 +7,12 @@ internal class RemoteTheEndGenerator(options: Map<String, Any>) : RemoteGenerato
     @Suppress("unused")
     constructor(): this(emptyMap())
 
+    override val fallbackBiome = 9.toUByte()
+
+    override fun getId(): Int {
+        return TYPE_OLD
+    }
+
     override fun getName(): String = NAME
 
     override fun getDimension(): Int {

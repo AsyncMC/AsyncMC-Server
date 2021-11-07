@@ -1,15 +1,24 @@
 package org.asyncmc.worldgen.remote.client.powernukkit
 
+import cn.nukkit.block.Block
+import cn.nukkit.block.BlockEntityHolder
 import cn.nukkit.block.BlockID
 import cn.nukkit.blockproperty.BooleanBlockProperty
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.blockstate.BlockStateRegistry
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.reflect.full.createInstance
+import kotlin.reflect.full.isSubclassOf
 
 internal object RemoteToPowerNukkitConverter {
     private val blockStateCache = ConcurrentHashMap<RemoteBlockState, LayeredBlockState>()
     private val fallback = LayeredBlockState(BlockState.of(BlockID.STONE))
+
+    private val biomeIds = ConcurrentHashMap<String, UByte>()
+
+    private val blocksWithEntity = IntOpenHashSet()
 
     fun convert(blockState: RemoteBlockState): LayeredBlockState {
         return blockStateCache.computeIfAbsent(blockState) { state ->
@@ -28,8 +37,26 @@ internal object RemoteToPowerNukkitConverter {
         }
     }
 
-    internal fun addToCache(mappings: Map<RemoteBlockState, LayeredBlockState>) {
+
+    internal fun detectBlockStatesWithEntity() {
+        @Suppress("DEPRECATION")
+        val blockClasses = Block.list
+        blockClasses.asSequence()
+            .filterNotNull()
+            .map { it.kotlin }
+            .filter { BlockEntityHolder::class.isSubclassOf(it) }
+            .map { it.createInstance() }
+            .forEach {
+                blocksWithEntity.add(it.id)
+            }
+    }
+
+    internal fun addToBlockCache(mappings: Map<RemoteBlockState, LayeredBlockState>) {
         blockStateCache += mappings
+    }
+
+    internal fun addBiomeMappings(mappings: Map<String, UByte>) {
+        biomeIds += mappings
     }
 
     private fun blockStatePropertyConverter(id: String, name: String, value: String, current: LayeredBlockState): LayeredBlockState {
@@ -55,6 +82,14 @@ internal object RemoteToPowerNukkitConverter {
             }
             current
         }
+    }
+
+    fun convertBiomeId(biome: String, fallback: UByte): UByte {
+        return biomeIds.getOrDefault(biome, fallback)
+    }
+
+    fun hasBlockEntity(blockId: Int): Boolean {
+        return blocksWithEntity.contains(blockId)
     }
 
     internal data class LayeredBlockState(

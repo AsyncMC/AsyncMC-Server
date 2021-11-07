@@ -58,7 +58,7 @@ fun Application.configureRouting(plugin: AsyncMcPaperWorldGenServer) {
                 NamespacedKey(plugin, folder.name)
             )
 
-            worldCreator.environment()
+            worldCreator.environment(env)
 
             worldCreator.seed(request.seed)
             worldCreator.generateStructures(request.generateStructures)
