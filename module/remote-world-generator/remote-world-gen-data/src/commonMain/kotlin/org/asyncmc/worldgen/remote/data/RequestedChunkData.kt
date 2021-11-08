@@ -12,6 +12,9 @@ public data class RequestedChunkData(
     val animals: Boolean = true,
     val structureEntities: Boolean = true,
     val otherEntities: Boolean = true,
+    val blockStates: Boolean = true,
+    val blockEntities: Boolean = true,
 ) {
     public val ignoreEntities: Boolean get() = !monsters && !animals && !structureEntities && !otherEntities
+    public fun ignoreEntities(): RequestedChunkData = copy(monsters = false, animals = false, structureEntities = false, otherEntities = false)
 }

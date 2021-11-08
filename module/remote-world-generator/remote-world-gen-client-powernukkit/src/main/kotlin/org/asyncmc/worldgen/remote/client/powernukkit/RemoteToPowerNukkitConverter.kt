@@ -2,20 +2,22 @@ package org.asyncmc.worldgen.remote.client.powernukkit
 
 import cn.nukkit.block.Block
 import cn.nukkit.block.BlockEntityHolder
+import cn.nukkit.block.BlockFlowerPot
 import cn.nukkit.block.BlockID
-import cn.nukkit.blockentity.BlockEntity
-import cn.nukkit.blockentity.BlockEntityBanner
-import cn.nukkit.blockentity.BlockEntityBrewingStand
-import cn.nukkit.blockentity.BlockEntityItemFrame
+import cn.nukkit.blockentity.*
 import cn.nukkit.blockproperty.BooleanBlockProperty
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.blockstate.BlockStateRegistry
+import cn.nukkit.entity.Entity
+import cn.nukkit.entity.passive.EntityBee
 import cn.nukkit.inventory.InventoryHolder
 import cn.nukkit.item.Item
 import cn.nukkit.item.ItemID
 import cn.nukkit.item.ItemPotion
+import cn.nukkit.item.MinecraftItemID
 import cn.nukkit.item.enchantment.Enchantment
 import cn.nukkit.level.format.generic.BaseFullChunk
+import cn.nukkit.math.BlockFace
 import cn.nukkit.nbt.tag.CompoundTag
 import cn.nukkit.nbt.tag.ListTag
 import cn.nukkit.nbt.tag.Tag
@@ -65,6 +67,16 @@ internal object RemoteToPowerNukkitConverter {
             .putString("Pattern", "mc").putInt("Color", 8)
             .putString("Pattern", "bo").putInt("Color", 15)
         )
+
+    private val allSlotRemappings = mapOf(
+        BlockEntity.BREWING_STAND to mapOf(
+            3 to 0,
+            0 to 1,
+            1 to 2,
+            2 to 3,
+            4 to 4,
+        )
+    )
 
     fun convert(blockState: RemoteBlockState): LayeredBlockState {
         return blockStateCache.computeIfAbsent(blockState) { state ->
@@ -204,39 +216,155 @@ internal object RemoteToPowerNukkitConverter {
         val remoteBlock = remoteChunk.blockLayers[0][(z and 0xF) or (x and 0xF shl 4) or ((y + remoteChunk.minY) shl 8)]
         val entityNbt = remoteBlockEntity.nbt.deserializeForNukkit()
         if (entity is InventoryHolder && entityNbt.containsList("Items", Tag.TAG_Compound)) {
+            val slotRemapping = allSlotRemappings[entity.saveId]
             val inventory = entity.inventory
             val inventoryTag = entityNbt.getList("Items", CompoundTag::class.java)
             for (i in 0 until inventoryTag.size()) {
                 val itemTag = inventoryTag[i]
                 val slot = itemTag.getByte("Slot")
+                val remapped = slotRemapping?.get(slot) ?: slot
                 val item = convertItem(itemTag) ?: continue
-                inventory.setItem(slot, item)
+                inventory.setItem(remapped, item)
             }
         }
-        if (entity is BlockEntityBrewingStand) {
-            plugin.log.info {
-                "Brewing"
-            }
-        }
-        if (entity is BlockEntityBanner) {
-            val colorName = remoteBlock.id.substringAfter(':').replace("_banner", "").replace("_wall", "").uppercase()
-            val color = DyeColor.valueOf(colorName)
-            entity.color = color.dyeData
-            entity.setBaseColor(color)
-            if (entityNbt.containsList("Patterns", Tag.TAG_Compound)) {
-                val patterns = entityNbt.getList("Patterns", CompoundTag::class.java)
-                if (patterns.equals(ominousBannerPatterns)) {
-                    entity.type = 1
-                } else {
-                    entity.namedTag.put("Patterns", patterns.copy())
+        when (entity) {
+            is BlockEntityBrewingStand -> {
+                if (entityNbt.containsByte("Fuel")) {
+                    entity.fuelAmount = entityNbt.getByte("Fuel")
                 }
+            }
+            is BlockEntityBanner -> {
+                val colorName = remoteBlock.id.substringAfter(':').replace("_banner", "").replace("_wall", "").uppercase()
+                val color = DyeColor.valueOf(colorName)
+                entity.color = color.dyeData
+                entity.setBaseColor(color)
+                if (entityNbt.containsList("Patterns", Tag.TAG_Compound)) {
+                    val patterns = entityNbt.getList("Patterns", CompoundTag::class.java)
+                    if (patterns.equals(ominousBannerPatterns)) {
+                        entity.type = 1
+                    } else {
+                        entity.namedTag.put("Patterns", patterns.copy())
+                    }
+                }
+            }
+            is BlockEntitySkull -> {
+                entity.namedTag.putByte("SkullType", when (remoteBlock.id) {
+                    "skeleton_skull", "skeleton_wall_skull" -> 0
+                    "wither_skeleton_skull", "wither_skeleton_wall_skull" -> 1
+                    "zombie_head", "zombie_wall_head" -> 2
+                    "player_head", "player_wall_head" -> 3
+                    "creeper_head", "creeper_wall_head" -> 4
+                    "dragon_head", "dragon_wall_head" -> 5
+                    else -> 0
+                })
+            }
+            is BlockEntityBed -> {
+                val colorName = remoteBlock.id.substringAfter(':').substringBeforeLast("_bed")
+                val color = DyeColor.valueOf(colorName)
+                entity.color = color.dyeData
+            }
+            is BlockEntityMusic -> {
+                entity.namedTag.putByte("note", remoteBlock.properties["note"]?.toIntOrNull() ?: 0)
+            }
+            is BlockEntityPistonArm -> {
+                if (remoteBlock.id.startsWith("minecraft:sticky")) {
+                    entity.sticky = true
+                }
+            }
+            is BlockEntityShulkerBox -> {
+                val facing = remoteBlock.properties["facing"]?.uppercase()?.let { BlockFace.valueOf(it) }
+                if (facing != null) {
+                    entity.namedTag.putByte("facing", facing.index)
+                }
+            }
+            is BlockEntityLectern -> {
+                if (entityNbt.containsCompound("Book")) {
+                    convertItem(entityNbt.getCompound("Book"))?.let { book ->
+                        entity.book = book
+                        if (entityNbt.containsInt("Page")) {
+                            entity.rawPage = entityNbt.getInt("Page") / 2
+                        }
+                    }
+                }
+            }
+            is BlockEntityJukebox -> {
+                if (entityNbt.containsCompound("RecordItem")) {
+                    convertItem(entityNbt.getCompound("RecordItem"))?.let { record ->
+                        entity.recordItem = record
+                    }
+                }
+            }
+            is BlockEntityHopper -> {
+                if (entityNbt.containsInt("TransferCooldown")) {
+                    entity.transferCooldown = entityNbt.getInt("TransferCooldown")
+                }
+            }
+            is BlockEntityBeehive -> {
+                if (entityNbt.containsList("Bees", Tag.TAG_Compound)) {
+                    val beesListTag = entityNbt.getList("Bees", CompoundTag::class.java)
+                    for (i in 0 until beesListTag.size()) {
+                        val beeTag = beesListTag[i]
+                        val minOccupationTime = beeTag.getInt("MinOccupationTicks")
+                        val ticksInHive = beeTag.getInt("TicksInHive")
+                        val ticksLeftToStay = maxOf(0, minOccupationTime - ticksInHive)
+                        val remoteBeeData = beeTag.getCompound("EntityData")
+                        val bee = createNukkitEntity(remoteChunk, entity.chunk as BaseFullChunk,
+                            RemoteEntity(
+                                id = remoteBeeData.getString("id"),
+                                x = entity.x.toFloat(),
+                                y = entity.y.toFloat(),
+                                z = entity.z.toFloat(),
+                                nbt = remoteBeeData.serialize()
+                            )
+                        )
+                        val hasNectar = (bee as? EntityBee)?.hasNectar == true
+                        entity.addOccupant(bee, ticksLeftToStay, hasNectar, false)
+                    }
+                }
+            }
+            is BlockFlowerPot -> {
+                val item: Item? = when (remoteBlock.id) {
+                    "minecraft:potted_dandelion" -> MinecraftItemID.YELLOW_FLOWER.get(1)
+                    "minecraft:potted_poppy" -> MinecraftItemID.RED_FLOWER.get(1)
+                    "minecraft:potted_blue_orchid" -> Item.getBlock(BlockID.RED_FLOWER, 1)
+                    "minecraft:potted_allium" -> Item.getBlock(BlockID.RED_FLOWER, 2)
+                    "minecraft:potted_azure_bluet" -> Item.getBlock(BlockID.RED_FLOWER, 3)
+                    "minecraft:potted_red_tulip" -> Item.getBlock(BlockID.RED_FLOWER, 4)
+                    "minecraft:potted_orange_tulip" -> Item.getBlock(BlockID.RED_FLOWER, 5)
+                    "minecraft:potted_white_tulip" -> Item.getBlock(BlockID.RED_FLOWER, 6)
+                    "minecraft:potted_pink_tulip" -> Item.getBlock(BlockID.RED_FLOWER, 7)
+                    "minecraft:potted_oxeye_daisy" -> Item.getBlock(BlockID.RED_FLOWER, 8)
+                    "minecraft:potted_cornflower" -> Item.getBlock(BlockID.RED_FLOWER, 9)
+                    "minecraft:potted_lily_of_the_valley" -> Item.getBlock(BlockID.RED_FLOWER, 10)
+                    "minecraft:potted_wither_rose" -> MinecraftItemID.WITHER_ROSE.get(1)
+                    "minecraft:potted_oak_sapling" -> Item.getBlock(BlockID.SAPLING, 0)
+                    "minecraft:potted_spruce_sapling" -> Item.getBlock(BlockID.SAPLING, 1)
+                    "minecraft:potted_birch_sapling" -> Item.getBlock(BlockID.SAPLING, 2)
+                    "minecraft:potted_jungle_sapling" -> Item.getBlock(BlockID.SAPLING, 3)
+                    "minecraft:potted_acacia_sapling" -> Item.getBlock(BlockID.SAPLING, 4)
+                    "minecraft:potted_dark_oak_sapling" -> Item.getBlock(BlockID.SAPLING, 4)
+                    "minecraft:potted_red_mushroom" -> MinecraftItemID.RED_MUSHROOM.get(1)
+                    "minecraft:potted_brown_mushroom" -> MinecraftItemID.BROWN_MUSHROOM.get(1)
+                    "minecraft:potted_fern" -> Item.getBlock(BlockID.TALL_GRASS, 1)
+                    "minecraft:potted_dead_bush" -> MinecraftItemID.DEADBUSH.get(1)
+                    "minecraft:potted_cactus" -> MinecraftItemID.CACTUS.get(1)
+                    "minecraft:potted_bamboo" -> MinecraftItemID.BAMBOO.get(1)
+                    // "minecraft:potted_azalea_bush" -> TODO
+                    //"minecraft:potted_flowering_azalea_bush" -> TODO
+                    "minecraft:potted_crimson_fungus" -> MinecraftItemID.CRIMSON_FUNGUS.get(1)
+                    "minecraft:potted_warped_fungus" -> MinecraftItemID.WARPED_FUNGUS.get(1)
+                    "minecraft:potted_crimson_roots" -> MinecraftItemID.CRIMSON_ROOTS.get(1)
+                    "minecraft:potted_warped_roots" -> MinecraftItemID.WARPED_ROOTS.get(1)
+                    else -> null
+                }
+                entity.setFlower(item)
             }
         }
     }
 
-    fun createNukkitEntity(remoteChunk: RemoteChunk, chunk: BaseFullChunk, remoteEntity: RemoteEntity) {
-        val factory = entityFactories[remoteEntity.id] ?: return
-        factory.createEntity(remoteChunk, remoteEntity, chunk)
+    fun createNukkitEntity(remoteChunk: RemoteChunk, chunk: BaseFullChunk, remoteEntity: RemoteEntity): Entity? {
+        val factory = entityFactories[remoteEntity.id] ?: return null
+        return factory.createEntity(remoteChunk, remoteEntity, chunk)
     }
 
     fun convertItem(baseItem: CompoundTag): Item? {
@@ -267,7 +395,7 @@ internal object RemoteToPowerNukkitConverter {
             }
         }
         if (itemId == ItemID.POTION || itemId == ItemID.LINGERING_POTION || itemId == ItemID.SPLASH_POTION) {
-            item.damage = convertPotionId(baseItem.getString("Potion"))
+            item.damage = convertPotionId(remoteItem.getString("Potion"))
         }
         val nbt = CompoundTag()
         if (remoteItem.containsByte("Unbreakable")) {
@@ -377,49 +505,49 @@ internal object RemoteToPowerNukkitConverter {
 
     private fun convertPotionId(id: String): Int {
         return when (id) {
-            "empty" -> ItemPotion.MUNDANE
-            "water" -> ItemPotion.NO_EFFECTS
-            "mundane" -> ItemPotion.MUNDANE
-            "thick" -> ItemPotion.THICK
-            "awkward" -> ItemPotion.AWKWARD
-            "night_vision" -> ItemPotion.NIGHT_VISION
-            "long_night_vision" -> ItemPotion.NIGHT_VISION_LONG
-            "invisibility" -> ItemPotion.INVISIBLE
-            "long_invisibility" -> ItemPotion.INVISIBLE_LONG
-            "leaping" -> ItemPotion.LEAPING
-            "strong_leaping" -> ItemPotion.LEAPING_II
-            "long_leaping" -> ItemPotion.LEAPING_LONG
-            "fire_resistance" -> ItemPotion.FIRE_RESISTANCE
-            "long_fire_resistance" -> ItemPotion.FIRE_RESISTANCE_LONG
-            "swiftness" -> ItemPotion.SPEED
-            "strong_swiftness" -> ItemPotion.SPEED_II
-            "long_swiftness" -> ItemPotion.SPEED_LONG
-            "slowness" -> ItemPotion.SLOWNESS
-            "strong_slowness" -> 42
-            "long_slowness" -> ItemPotion.SLOWNESS_LONG
-            "water_breathing" -> ItemPotion.WATER_BREATHING
-            "long_water_breathing" -> ItemPotion.WATER_BREATHING_LONG
-            "healing" -> ItemPotion.INSTANT_HEALTH
-            "strong_healing" -> ItemPotion.INSTANT_HEALTH_II
-            "harming" -> ItemPotion.HARMING
-            "strong_harming" -> ItemPotion.HARMING_II
-            "poison" -> ItemPotion.POISON
-            "strong_poison" -> ItemPotion.POISON_II
-            "long_poison" -> ItemPotion.POISON_LONG
-            "regeneration" -> ItemPotion.REGENERATION
-            "strong_regeneration" -> ItemPotion.REGENERATION_II
-            "long_regeneration" -> ItemPotion.REGENERATION_LONG
-            "strength" -> ItemPotion.STRENGTH
-            "strong_strength" -> ItemPotion.STRENGTH_II
-            "long_strength" -> ItemPotion.STRENGTH_LONG
-            "weakness" -> ItemPotion.WEAKNESS
-            "long_weakness" -> ItemPotion.WEAKNESS_LONG
-            "luck" -> ItemPotion.MUNDANE
-            "turtle_master" -> 37
-            "strong_turtle_master" -> 39
-            "long_turtle_master" -> 38
-            "slow_falling" -> 40
-            "long_slow_falling" -> 41
+            "minecraft:empty" -> ItemPotion.MUNDANE
+            "minecraft:water" -> ItemPotion.NO_EFFECTS
+            "minecraft:mundane" -> ItemPotion.MUNDANE
+            "minecraft:thick" -> ItemPotion.THICK
+            "minecraft:awkward" -> ItemPotion.AWKWARD
+            "minecraft:night_vision" -> ItemPotion.NIGHT_VISION
+            "minecraft:long_night_vision" -> ItemPotion.NIGHT_VISION_LONG
+            "minecraft:invisibility" -> ItemPotion.INVISIBLE
+            "minecraft:long_invisibility" -> ItemPotion.INVISIBLE_LONG
+            "minecraft:leaping" -> ItemPotion.LEAPING
+            "minecraft:strong_leaping" -> ItemPotion.LEAPING_II
+            "minecraft:long_leaping" -> ItemPotion.LEAPING_LONG
+            "minecraft:fire_resistance" -> ItemPotion.FIRE_RESISTANCE
+            "minecraft:long_fire_resistance" -> ItemPotion.FIRE_RESISTANCE_LONG
+            "minecraft:swiftness" -> ItemPotion.SPEED
+            "minecraft:strong_swiftness" -> ItemPotion.SPEED_II
+            "minecraft:long_swiftness" -> ItemPotion.SPEED_LONG
+            "minecraft:slowness" -> ItemPotion.SLOWNESS
+            "minecraft:strong_slowness" -> 42
+            "minecraft:long_slowness" -> ItemPotion.SLOWNESS_LONG
+            "minecraft:water_breathing" -> ItemPotion.WATER_BREATHING
+            "minecraft:long_water_breathing" -> ItemPotion.WATER_BREATHING_LONG
+            "minecraft:healing" -> ItemPotion.INSTANT_HEALTH
+            "minecraft:strong_healing" -> ItemPotion.INSTANT_HEALTH_II
+            "minecraft:harming" -> ItemPotion.HARMING
+            "minecraft:strong_harming" -> ItemPotion.HARMING_II
+            "minecraft:poison" -> ItemPotion.POISON
+            "minecraft:strong_poison" -> ItemPotion.POISON_II
+            "minecraft:long_poison" -> ItemPotion.POISON_LONG
+            "minecraft:regeneration" -> ItemPotion.REGENERATION
+            "minecraft:strong_regeneration" -> ItemPotion.REGENERATION_II
+            "minecraft:long_regeneration" -> ItemPotion.REGENERATION_LONG
+            "minecraft:strength" -> ItemPotion.STRENGTH
+            "minecraft:strong_strength" -> ItemPotion.STRENGTH_II
+            "minecraft:long_strength" -> ItemPotion.STRENGTH_LONG
+            "minecraft:weakness" -> ItemPotion.WEAKNESS
+            "minecraft:long_weakness" -> ItemPotion.WEAKNESS_LONG
+            "minecraft:luck" -> ItemPotion.MUNDANE
+            "minecraft:turtle_master" -> 37
+            "minecraft:strong_turtle_master" -> 39
+            "minecraft:long_turtle_master" -> 38
+            "minecraft:slow_falling" -> 40
+            "minecraft:long_slow_falling" -> 41
             else -> ItemPotion.MUNDANE
         }
     }

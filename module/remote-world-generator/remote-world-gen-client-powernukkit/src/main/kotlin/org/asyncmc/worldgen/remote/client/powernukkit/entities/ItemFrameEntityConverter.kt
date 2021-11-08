@@ -18,7 +18,7 @@ internal class ItemFrameEntityConverter: EntityFactory() {
     private val water = BlockState.of(BlockID.WATER)
     private val torch = BlockState.of(BlockID.TORCH)
 
-    override fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, chunk: BaseFullChunk) {
+    override fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, chunk: BaseFullChunk): Nothing? {
         val nbt = remoteEntity.nbt.deserializeForNukkit()
         val bx = nbt.getInt("TileX")
         val by = nbt.getInt("TileY")
@@ -40,11 +40,11 @@ internal class ItemFrameEntityConverter: EntityFactory() {
         val cz = bz - (chunk.z shl 4)
         val cy = by
         if (cx !in 0..15 || cy !in 0..255 || cz !in 0..15) {
-            return
+            return null
         }
         val currentMain = chunk.getBlockStateAt(cx, cy, cz, 0)
         if (currentMain == torch) {
-            return
+            return null
         }
         val itemTag = nbt.getCompound("Item")
         val itemId = itemTag.getString("id")
@@ -57,10 +57,11 @@ internal class ItemFrameEntityConverter: EntityFactory() {
             chunk.setBlockStateAt(cx, cy, cz, 1, water)
         }
         chunk.setBlockStateAt(cx, cy, cz, 0, state)
-        val blockEntity = RemoteToPowerNukkitConverter.createDefaultBlockEntity(state, chunk, cx, cy, cz, null, remoteChunk) as? BlockEntityItemFrame ?: return
+        val blockEntity = RemoteToPowerNukkitConverter.createDefaultBlockEntity(state, chunk, cx, cy, cz, null, remoteChunk) as? BlockEntityItemFrame ?: return null
         if (itemId.isBlank() || itemId == "minecraft:air") {
-            return
+            return null
         }
         blockEntity.item = RemoteToPowerNukkitConverter.convertItem(itemTag)
+        return null
     }
 }

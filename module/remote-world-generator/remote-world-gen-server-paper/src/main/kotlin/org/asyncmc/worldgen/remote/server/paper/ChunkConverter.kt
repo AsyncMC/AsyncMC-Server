@@ -46,22 +46,35 @@ object ChunkConverter {
         val worldNms = chunk.world.asWrappedNMS()
 
         val chunkHeightElementBits = NMSMathHelper.log2DeBruijn(chunkNms.height + 1)
-        val expectedTiles = mutableSetOf<NMSBlockPos>()
-        val blockStates = convertBlockPalette(chunkNms, blockRegistry, expectedTiles)
-        val tiles = chunkNms.tileEntities
-        if (!tiles.keys.containsAll(expectedTiles)) {
-            plugin.logger.fine{ "The following tile entities are missing: ${expectedTiles - tiles.keys}" }
-            return null
+        val blockStates: List<RemotePaletteBlockStates>
+        val tileEntities: List<RemoteBlockEntity>
+        if (!requestedChunkData.blockStates) {
+            blockStates = emptyList()
+            tileEntities = emptyList()
+        } else {
+            val expectedTiles = mutableSetOf<NMSBlockPos>()
+            blockStates = convertBlockPalette(chunkNms, blockRegistry, expectedTiles)
+            val tiles = chunkNms.tileEntities
+            if (!tiles.keys.containsAll(expectedTiles)) {
+                plugin.logger.fine { "The following tile entities are missing: ${expectedTiles - tiles.keys}" }
+                return null
+            }
+            tileEntities = if (!requestedChunkData.blockEntities) {
+                emptyList()
+            } else {
+                tiles.map {
+                    convertBlockEntity(plugin, it, blockEntityRegistry, chunk, openTreasures)
+                }
+            }
         }
+
         return RemoteChunk(
             chunk.x,
             chunk.z,
             chunkNms.minBuildHeight,
             chunkNms.height,
             blockStates,
-            tiles.map {
-                convertBlockEntity(plugin, it, blockEntityRegistry, chunk, openTreasures)
-            },
+            tileEntities,
             convertBiomes(checkNotNull(chunkNms.biomeArray), biomeRegistry),
             if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, blockLightProvider),
             if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, skyLightProvider),

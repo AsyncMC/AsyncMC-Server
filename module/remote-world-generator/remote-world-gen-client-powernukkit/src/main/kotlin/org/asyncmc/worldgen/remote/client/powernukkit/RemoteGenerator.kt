@@ -31,6 +31,12 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
     @OptIn(ExperimentalSerializationApi::class)
     private val cachedSettings = ProtoBuf.Default.encodeToByteArray(RequestedChunkData(
         openedTreasures = true,
+    ).ignoreEntities())
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private val requestEntities = ProtoBuf.Default.encodeToByteArray(RequestedChunkData(
+        blockStates = false,
+        blockEntities = false,
     ))
 
     protected abstract val fallbackBiome: UByte
@@ -58,11 +64,16 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         action: ()-> R
     ): R {
         var result: R
+        var silentRetryDelay = 50L
         while (true) {
             try {
                 result = action()
                 break
-            } catch (retry: SilentRetry) {
+            } catch (_: SilentRetry) {
+                delay(silentRetryDelay)
+                if (silentRetryDelay < retry) {
+                    silentRetryDelay = minOf((silentRetryDelay + silentRetryDelay * 0.25).toLong(), retry)
+                }
                 continue
             } catch (e: Exception) {
                 plugin.log.error(e) {
@@ -105,28 +116,7 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         val remoteChunkAsync = CoroutineScope(Dispatchers.IO).async {
             val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
             keepTrying({"Could not receive the remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $level"}) {
-                val response = try {
-                    plugin.httpClient.post<ByteArray>("$backend/chunk/create/$remoteWorldName/$chunkX/$chunkZ") {
-                        accept(ContentType.Application.ProtoBuf)
-                        contentType(ContentType.Application.ProtoBuf)
-                        body = cachedSettings
-                    }
-                } catch (e: ClientRequestException) {
-                    when (e.response.status) {
-                        HttpStatusCode.Locked -> {
-                            delay(35)
-                            throw SilentRetry
-                        }
-                        HttpStatusCode.NotFound -> {
-                            plugin.log.error(e) { "The remote world handler $remoteWorldName is no longer valid, trying to refresh it" }
-                            sendPrepareWorldRequestAsync().await()
-                            plugin.log.info { "The remote world handler was refreshed" }
-                            throw SilentRetry
-                        }
-                        else -> throw e
-                    }
-                }
-                ProtoBuf.Default.decodeFromByteArray<RemoteChunk>(response)
+                requestChunk(chunkX, chunkZ, cachedSettings)
             }
         }
 
@@ -148,9 +138,54 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         }
         remoteChunk.blockEntities.associateBy { BlockVector3(it.x, it.y, it.z) }
         setBlockStates(remoteChunk, chunk, blockEntities)
+    }
+
+    override fun populateChunk(chunkX: Int, chunkZ: Int) {
+        val remoteChunkAsync = CoroutineScope(Dispatchers.IO).async {
+            val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
+            var retries = 0
+            keepTrying({"Could not receive the entities from remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $level"}) {
+                if (retries++ >= 10) {
+                    plugin.log.error { "Giving up on the entities at chunk x=$chunkX, z=$chunkX - $level" }
+                    return@keepTrying null
+                }
+                requestChunk(chunkX, chunkZ, requestEntities)
+            }
+        }
+
+        val chunk = level.getChunk(chunkX, chunkZ)
+        val remoteChunk = runBlocking { remoteChunkAsync.await() } ?: return
         if (remoteChunk.entities.isNotEmpty()) {
             createEntities(remoteChunk, chunk)
         }
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend fun requestChunk(chunkX: Int, chunkZ: Int, settings: ByteArray): RemoteChunk {
+        val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
+        val response = try {
+            plugin.httpClient.post<ByteArray>("$backend/chunk/create/$remoteWorldName/$chunkX/$chunkZ") {
+                accept(ContentType.Application.ProtoBuf)
+                contentType(ContentType.Application.ProtoBuf)
+                body = settings
+            }
+        } catch (e: ClientRequestException) {
+            when (e.response.status) {
+                HttpStatusCode.Locked -> {
+                    throw SilentRetry
+                }
+                HttpStatusCode.NotFound -> {
+                    plugin.log.error(e) { "The remote world handler $remoteWorldName is no longer valid, trying to refresh it" }
+                    coroutineScope {
+                        sendPrepareWorldRequestAsync().await()
+                    }
+                    plugin.log.info { "The remote world handler was refreshed" }
+                    throw SilentRetry
+                }
+                else -> throw e
+            }
+        }
+        return ProtoBuf.Default.decodeFromByteArray(response)
     }
 
     private fun createEntities(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {
@@ -216,10 +251,6 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
                 }
             }
         }
-    }
-
-    override fun populateChunk(chunkX: Int, chunkZ: Int) {
-        // Does nothing now
     }
 
     override fun getSettings(): Map<String, Any> {

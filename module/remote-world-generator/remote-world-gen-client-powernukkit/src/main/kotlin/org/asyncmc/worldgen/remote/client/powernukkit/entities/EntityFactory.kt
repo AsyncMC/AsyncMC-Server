@@ -11,7 +11,7 @@ import org.asyncmc.worldgen.remote.data.RemoteChunk
 import org.asyncmc.worldgen.remote.data.RemoteEntity
 
 internal abstract class EntityFactory {
-    abstract fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, chunk: BaseFullChunk)
+    abstract fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, chunk: BaseFullChunk): Entity?
 
     protected open fun adjustNbt(
         remoteChunk: RemoteChunk,
@@ -22,9 +22,9 @@ internal abstract class EntityFactory {
         nbt: CompoundTag,
     ): Boolean = true
 
-    protected open fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, nukkitId: String?, chunk: BaseFullChunk) {
+    protected open fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, nukkitId: String?, chunk: BaseFullChunk): Entity? {
         if (nukkitId.isNullOrBlank() || nukkitId in unknownEntities) {
-            return
+            return null
         }
         val entityNbt = remoteEntity.nbt.deserializeForNukkit()
         val pos = entityNbt.getList("Pos", DoubleTag::class.java)
@@ -53,7 +53,9 @@ internal abstract class EntityFactory {
             if (entity == null) {
                 unknownEntities += nukkitId
             }
+            return entity
         }
+        return null
     }
 
     companion object {

@@ -5,7 +5,7 @@ import cn.nukkit.nbt.tag.CompoundTag
 import org.asyncmc.worldgen.remote.data.RemoteChunk
 import org.asyncmc.worldgen.remote.data.RemoteEntity
 
-internal class GiantEntityFactory: EntityFactory() {
+internal class GiantEntityFactory: GenericEntityFactory("Zombie") {
     override fun adjustNbt(
         remoteChunk: RemoteChunk,
         remoteEntity: RemoteEntity,
@@ -17,9 +17,5 @@ internal class GiantEntityFactory: EntityFactory() {
         super.adjustNbt(remoteChunk, remoteEntity, nukkitId, chunk, entityNbt, nbt)
         nbt.putFloat("Scale", 10F)
         return true
-    }
-
-    override fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, chunk: BaseFullChunk) {
-        createEntity(remoteChunk, remoteEntity, "Zombie", chunk)
     }
 }
