@@ -4,6 +4,9 @@ import cn.nukkit.block.Block
 import cn.nukkit.block.BlockEntityHolder
 import cn.nukkit.block.BlockID
 import cn.nukkit.blockentity.BlockEntity
+import cn.nukkit.blockentity.BlockEntityBanner
+import cn.nukkit.blockentity.BlockEntityBrewingStand
+import cn.nukkit.blockentity.BlockEntityItemFrame
 import cn.nukkit.blockproperty.BooleanBlockProperty
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.blockstate.BlockStateRegistry
@@ -21,6 +24,7 @@ import cn.nukkit.utils.DyeColor
 import cn.nukkit.utils.ServerException
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import org.asyncmc.worldgen.remote.client.powernukkit.entities.EntityFactory
+import org.asyncmc.worldgen.remote.data.RemoteBlockEntity
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
 import org.asyncmc.worldgen.remote.data.RemoteChunk
 import org.asyncmc.worldgen.remote.data.RemoteEntity
@@ -49,6 +53,18 @@ internal object RemoteToPowerNukkitConverter {
             }
         }
     }
+
+    private val ominousBannerPatterns = ListTag<CompoundTag>("Patterns")
+        .add(CompoundTag()
+            .putString("Pattern", "mr").putInt("Color", 9)
+            .putString("Pattern", "bs").putInt("Color", 8)
+            .putString("Pattern", "cs").putInt("Color", 7)
+            .putString("Pattern", "bo").putInt("Color", 8)
+            .putString("Pattern", "ms").putInt("Color", 15)
+            .putString("Pattern", "hh").putInt("Color", 8)
+            .putString("Pattern", "mc").putInt("Color", 8)
+            .putString("Pattern", "bo").putInt("Color", 15)
+        )
 
     fun convert(blockState: RemoteBlockState): LayeredBlockState {
         return blockStateCache.computeIfAbsent(blockState) { state ->
@@ -147,6 +163,8 @@ internal object RemoteToPowerNukkitConverter {
         cx: Int,
         cy: Int,
         cz: Int,
+        remoteBlockEntity: RemoteBlockEntity?,
+        remoteChunk: RemoteChunk,
         nbt: CompoundTag = CompoundTag()
     ): BlockEntity? {
         val blockEntityType = blocksWithEntity[blockState.blockId] ?: return null
@@ -159,27 +177,31 @@ internal object RemoteToPowerNukkitConverter {
                 .putInt("x", bx)
                 .putInt("y", cy)
                 .putInt("z", bz)
-        ).also {
-            if (it == null) {
+        ).also { blockEntity ->
+            if (blockEntity == null) {
                 plugin.log.error { "Could not create the block entity for $blockState" }
-            } else {
-                chunk.addBlockEntity(it)
+                return null
             }
+            if (remoteBlockEntity == null) {
+                if (blockEntity !is BlockEntityItemFrame) {
+                    plugin.log.warn { "There's no remote block entity for the block at ${blockEntity.location}" }
+                }
+                return blockEntity
+            }
+            try {
+                applyBlockEntityData(remoteChunk, remoteBlockEntity, blockEntity)
+            } catch (e: Exception) {
+                plugin.log.error(e) { "Error while applying block entity data for $blockState" }
+            }
+            chunk.addBlockEntity(blockEntity)
         }
     }
 
-    fun convertBlockEntity(remoteChunk: RemoteChunk, chunk: BaseFullChunk, remoteBlockEntity: RemoteEntity) {
-        // Assume that it was already created with default state, let's apply the remote state to them
-        val x = remoteBlockEntity.x.toInt()
-        val y = remoteBlockEntity.y.toInt()
-        val z = remoteBlockEntity.z.toInt()
-        val entity = chunk.getTile(x and 0xF, y, z and 0xF)
-        if (entity == null) {
-            plugin.log.warn {
-                "Expected a block entity to be at x:$x y:$y z:$z to convert ${remoteBlockEntity.id}, but it was not there"
-            }
-            return
-        }
+    private fun applyBlockEntityData(remoteChunk: RemoteChunk, remoteBlockEntity: RemoteBlockEntity, entity: BlockEntity) {
+        val x = remoteBlockEntity.x
+        val y = remoteBlockEntity.y
+        val z = remoteBlockEntity.z
+        val remoteBlock = remoteChunk.blockLayers[0][(z and 0xF) or (x and 0xF shl 4) or ((y + remoteChunk.minY) shl 8)]
         val entityNbt = remoteBlockEntity.nbt.deserializeForNukkit()
         if (entity is InventoryHolder && entityNbt.containsList("Items", Tag.TAG_Compound)) {
             val inventory = entity.inventory
@@ -189,6 +211,25 @@ internal object RemoteToPowerNukkitConverter {
                 val slot = itemTag.getByte("Slot")
                 val item = convertItem(itemTag) ?: continue
                 inventory.setItem(slot, item)
+            }
+        }
+        if (entity is BlockEntityBrewingStand) {
+            plugin.log.info {
+                "Brewing"
+            }
+        }
+        if (entity is BlockEntityBanner) {
+            val colorName = remoteBlock.id.substringAfter(':').replace("_banner", "").replace("_wall", "").uppercase()
+            val color = DyeColor.valueOf(colorName)
+            entity.color = color.dyeData
+            entity.setBaseColor(color)
+            if (entityNbt.containsList("Patterns", Tag.TAG_Compound)) {
+                val patterns = entityNbt.getList("Patterns", CompoundTag::class.java)
+                if (patterns.equals(ominousBannerPatterns)) {
+                    entity.type = 1
+                } else {
+                    entity.namedTag.put("Patterns", patterns.copy())
+                }
             }
         }
     }

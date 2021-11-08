@@ -9,8 +9,7 @@ public data class RemoteChunk(
     val minY: Int,
     val maxY: Int,
     val blockLayers: List<RemotePaletteBlockStates>,
-    val blockEntities: List<RemoteEntity>,
-    val entities: List<RemoteEntity>,
+    val blockEntities: List<RemoteBlockEntity>,
     val biomeMap: RemotePalettedBiomeMap,
     val blockLight: RemoteLightMap?,
     val skyLight: RemoteLightMap?,
@@ -25,4 +24,5 @@ public data class RemoteChunk(
     val blocksPendingUpdate: List<BlockPosInsideChunk>,
     val liquidPendingUpdate: List<BlockPosInsideChunk>,
     val structures: SerializedNbtFile?,
+    val entities: List<RemoteEntity>,
 )

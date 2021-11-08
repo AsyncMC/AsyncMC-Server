@@ -14,6 +14,8 @@ class AsyncMcPaperWorldGenServer: JavaPlugin() {
             saveDefaultConfig()
             reloadConfig()
             val port = config.getInt("webserver.port", -1).takeIf { it != -1 } ?: (server.port + 1)
+            EntityCaptureListener.startCleanupTask(this)
+            server.pluginManager.registerEvents(EntityCaptureListener, this)
             startServer(port)
         }
     }

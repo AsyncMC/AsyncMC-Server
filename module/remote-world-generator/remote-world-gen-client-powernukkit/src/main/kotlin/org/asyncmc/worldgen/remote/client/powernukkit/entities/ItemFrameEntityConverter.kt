@@ -57,7 +57,7 @@ internal class ItemFrameEntityConverter: EntityFactory() {
             chunk.setBlockStateAt(cx, cy, cz, 1, water)
         }
         chunk.setBlockStateAt(cx, cy, cz, 0, state)
-        val blockEntity = RemoteToPowerNukkitConverter.createDefaultBlockEntity(state, chunk, cx, cy, cz) as? BlockEntityItemFrame ?: return
+        val blockEntity = RemoteToPowerNukkitConverter.createDefaultBlockEntity(state, chunk, cx, cy, cz, null, remoteChunk) as? BlockEntityItemFrame ?: return
         if (itemId.isBlank() || itemId == "minecraft:air") {
             return
         }

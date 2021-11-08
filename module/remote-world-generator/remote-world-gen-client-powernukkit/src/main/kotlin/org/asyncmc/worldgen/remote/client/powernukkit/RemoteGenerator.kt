@@ -5,19 +5,21 @@ import cn.nukkit.level.ChunkManager
 import cn.nukkit.level.Level
 import cn.nukkit.level.format.generic.BaseFullChunk
 import cn.nukkit.level.generator.Generator
+import cn.nukkit.math.BlockVector3
 import cn.nukkit.math.NukkitRandom
 import cn.nukkit.math.Vector3
+import io.ktor.client.features.*
 import io.ktor.client.request.*
-import io.ktor.features.*
 import io.ktor.http.*
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap
+import it.unimi.dsi.fastutil.ints.Int2ObjectMaps
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import kotlinx.coroutines.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
-import org.asyncmc.worldgen.remote.data.MinecraftDimension
-import org.asyncmc.worldgen.remote.data.PrepareWorldRequest
-import org.asyncmc.worldgen.remote.data.RemoteChunk
+import org.asyncmc.worldgen.remote.data.*
 
 internal abstract class RemoteGenerator(val options: Map<String, Any>): Generator() {
     protected lateinit var level: ChunkManager
@@ -25,6 +27,11 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
     private var remoteNameAsync: Deferred<String>? = null
     private var remoteName: String? = null
     val backend = options["backend"]?.let { Url(it.toString()) } ?: plugin.backend
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private val cachedSettings = ProtoBuf.Default.encodeToByteArray(RequestedChunkData(
+        openedTreasures = true,
+    ))
 
     protected abstract val fallbackBiome: UByte
 
@@ -99,14 +106,25 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
             val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
             keepTrying({"Could not receive the remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $level"}) {
                 val response = try {
-                    plugin.httpClient.get<ByteArray>("$backend/chunk/create/$remoteWorldName/$chunkX/$chunkZ?openTreasures=true") {
+                    plugin.httpClient.post<ByteArray>("$backend/chunk/create/$remoteWorldName/$chunkX/$chunkZ") {
                         accept(ContentType.Application.ProtoBuf)
+                        contentType(ContentType.Application.ProtoBuf)
+                        body = cachedSettings
                     }
-                } catch (e: NotFoundException) {
-                    plugin.log.error(e) { "The remote world handler $remoteWorldName is no longer valid, trying to refresh it" }
-                    sendPrepareWorldRequestAsync().await()
-                    plugin.log.info { "The remote world handler was refreshed" }
-                    throw SilentRetry
+                } catch (e: ClientRequestException) {
+                    when (e.response.status) {
+                        HttpStatusCode.Locked -> {
+                            delay(35)
+                            throw SilentRetry
+                        }
+                        HttpStatusCode.NotFound -> {
+                            plugin.log.error(e) { "The remote world handler $remoteWorldName is no longer valid, trying to refresh it" }
+                            sendPrepareWorldRequestAsync().await()
+                            plugin.log.info { "The remote world handler was refreshed" }
+                            throw SilentRetry
+                        }
+                        else -> throw e
+                    }
                 }
                 ProtoBuf.Default.decodeFromByteArray<RemoteChunk>(response)
             }
@@ -116,24 +134,22 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         val remoteChunk = runBlocking { remoteChunkAsync.await() }
 
         setBiomes(remoteChunk, chunk)
-        setBlockStates(remoteChunk, chunk)
-        if (remoteChunk.blockEntities.isNotEmpty()) {
-            createBlockEntities(remoteChunk, chunk)
-        }
-        if (remoteChunk.entities.isNotEmpty()) {
-            createEntities(remoteChunk, chunk)
-        }
-    }
-
-    private fun createBlockEntities(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {
-        remoteChunk.blockEntities.forEach { remoteBlockEntity ->
-            try {
-                RemoteToPowerNukkitConverter.convertBlockEntity(remoteChunk, chunk, remoteBlockEntity)
-            } catch (e: Exception) {
-                plugin.log.error(e) {
-                    "Failed to create the block entity $remoteBlockEntity"
+        val blockEntities = if (remoteChunk.blockEntities.isEmpty()) {
+            Int2ObjectMaps.emptyMap()
+        } else {
+            Int2ObjectOpenHashMap<RemoteBlockEntity>(remoteChunk.blockEntities.size).also { map ->
+                remoteChunk.blockEntities.forEach { remoteBlockEntity ->
+                    val cx = remoteBlockEntity.x and 0xF
+                    val cz = remoteBlockEntity.z and 0xF
+                    val cy = remoteBlockEntity.y + remoteChunk.minY
+                    map[cz or (cx shl 4) or (cy shl 8)] = remoteBlockEntity
                 }
             }
+        }
+        remoteChunk.blockEntities.associateBy { BlockVector3(it.x, it.y, it.z) }
+        setBlockStates(remoteChunk, chunk, blockEntities)
+        if (remoteChunk.entities.isNotEmpty()) {
+            createEntities(remoteChunk, chunk)
         }
     }
 
@@ -149,7 +165,10 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         }
     }
 
-    private fun setBlockStates(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {
+    private fun setBlockStates(remoteChunk: RemoteChunk,
+        chunk: BaseFullChunk,
+        blockEntities: Int2ObjectMap<RemoteBlockEntity>
+    ) {
         val minY = remoteChunk.minY
         require(remoteChunk.blockLayers.size <= 1) {
             "Unsupported response with multiple (size = ${remoteChunk.blockLayers.size})"
@@ -166,7 +185,16 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
                     chunk.setBlockStateAtLayer(ix, cy, iz, 1, blockState.fluid)
                 }
                 try {
-                    RemoteToPowerNukkitConverter.createDefaultBlockEntity(blockState.main, chunk, ix, cy, iz)
+                    val blockEntity = blockEntities[index]
+                    RemoteToPowerNukkitConverter.createDefaultBlockEntity(
+                        blockState.main,
+                        chunk,
+                        ix,
+                        cy,
+                        iz,
+                        blockEntity,
+                        remoteChunk
+                    )
                 } catch (e: Exception) {
                     plugin.log.error(e) {
                         "Failed to create block entity at chunk (${chunk.x},${chunk.z}) block ($ix,$cy,$iz)"

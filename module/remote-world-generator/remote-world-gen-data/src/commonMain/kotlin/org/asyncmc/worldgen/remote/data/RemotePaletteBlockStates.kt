@@ -15,24 +15,4 @@ public class RemotePaletteBlockStates(
     override fun get(index: Int): RemoteBlockState {
         return palette[data[index]]
     }
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other == null || this::class != other::class) return false
-        if (!super.equals(other)) return false
-
-        other as RemotePaletteBlockStates
-
-        if (palette != other.palette) return false
-        if (!data.contentEquals(other.data)) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = super.hashCode()
-        result = 31 * result + palette.hashCode()
-        result = 31 * result + data.contentHashCode()
-        return result
-    }
 }

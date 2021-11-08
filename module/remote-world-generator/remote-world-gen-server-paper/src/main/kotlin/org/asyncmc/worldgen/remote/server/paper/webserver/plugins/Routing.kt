@@ -8,11 +8,16 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.future.await
 import org.asyncmc.worldgen.remote.data.CreateChunkRequest
 import org.asyncmc.worldgen.remote.data.PrepareWorldRequest
-import org.asyncmc.worldgen.remote.data.RemoteChunk
+import org.asyncmc.worldgen.remote.data.RequestedChunkData
 import org.asyncmc.worldgen.remote.server.paper.AsyncMcPaperWorldGenServer
 import org.asyncmc.worldgen.remote.server.paper.ChunkConverter
+import org.asyncmc.worldgen.remote.server.paper.EntityCaptureListener
 import org.asyncmc.worldgen.remote.server.paper.callSync
-import org.bukkit.*
+import org.bukkit.Difficulty
+import org.bukkit.NamespacedKey
+import org.bukkit.World
+import org.bukkit.WorldCreator
+import org.bukkit.entity.Entity
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.HandlerList
@@ -21,7 +26,6 @@ import org.bukkit.event.world.WorldInitEvent
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.name
-import kotlin.system.measureTimeMillis
 
 @Suppress("EXPERIMENTAL_IS_NOT_ENABLED")
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -92,43 +96,60 @@ fun Application.configureRouting(plugin: AsyncMcPaperWorldGenServer) {
             }
         }
 
-        get("/chunk/create/{worldId}/{x}/{z}") {
-            val request: CreateChunkRequest
-            val world: World?
-            var time = measureTimeMillis {
-                request = CreateChunkRequest(
-                    x = requireNotNull(call.parameters["x"]).toInt(),
-                    z = requireNotNull(call.parameters["z"]).toInt(),
-                    worldId = requireNotNull(call.parameters["worldId"]),
-                )
-                world = worlds[request.worldId]
-            }
+        post<RequestedChunkData>("/chunk/create/{worldId}/{x}/{z}") { requestedData ->
+            val request = CreateChunkRequest(
+                x = requireNotNull(call.parameters["x"]).toInt(),
+                z = requireNotNull(call.parameters["z"]).toInt(),
+                worldId = requireNotNull(call.parameters["worldId"]),
+            )
+            val world = worlds[request.worldId]
             if (world == null) {
                 call.response.status(HttpStatusCode.NotFound)
-                return@get
+                return@post
             }
-            log.info("Initial handling took $time ms")
-            val chunk: Chunk
-            time = measureTimeMillis {
-                chunk = world.getChunkAtAsync(request.x, request.z).await()
+
+            var capturedEntities: Set<Entity>? = null
+            val ignoreEntities = requestedData.ignoreEntities
+            var remoteChunk = world.getChunkAtAsync(request.x, request.z, true, true).thenApply { chunk ->
+                capturedEntities = if (ignoreEntities) emptySet() else EntityCaptureListener[request.x, request.z]
+                if (!ignoreEntities && !chunk.isEntitiesLoaded && capturedEntities == null) {
+                    plugin.logger.fine { "Entities not captured at x:${request.x} z:${request.z}" }
+                    return@thenApply null
+                }
+
+                ChunkConverter.convert(
+                    plugin = plugin,
+                    chunk = chunk,
+                    requestedData,
+                )?.let { remoteChunk ->
+                    if (chunk.isEntitiesLoaded) {
+                        remoteChunk.copy(entities = chunk.entities.map {
+                            ChunkConverter.convertEntity(it)
+                        })
+                    } else {
+                        remoteChunk
+                    }
+                }
+            }.await()
+
+            if (remoteChunk == null) {
+                call.response.status(HttpStatusCode.Locked)
+                return@post
             }
-            log.info("Chunk loading/creating took $time ms")
-            val queryParameters = call.request.queryParameters
-            val remoteChunk: RemoteChunk
-            time = measureTimeMillis {
-                remoteChunk = ChunkConverter.convert(
-                    plugin,
-                    chunk,
-                    queryParameters["heightMaps"].toBoolean(),
-                    queryParameters["lightMaps"].toBoolean(),
-                    queryParameters["structures"].toBoolean(),
-                    queryParameters["openTreasures"].toBoolean(),
-                )
-                server.scheduler.runTask(plugin, Runnable {
-                    chunk.unload()
-                })
+
+            if (!ignoreEntities && remoteChunk.entities.isEmpty()) {
+                val captured = capturedEntities
+                if (captured != null) {
+                    remoteChunk = remoteChunk.copy(entities = captured.map {
+                        ChunkConverter.convertEntity(it)
+                    })
+                }
             }
-            log.info("Chunk conversion took $time ms")
+
+            server.scheduler.runTaskLater(plugin, Runnable {
+                world.unloadChunk(request.x, request.z)
+            }, 5)
+
             call.respond(remoteChunk)
         }
     }

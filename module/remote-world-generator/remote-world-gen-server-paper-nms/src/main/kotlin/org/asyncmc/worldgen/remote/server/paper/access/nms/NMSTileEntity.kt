@@ -6,6 +6,8 @@ import net.minecraft.world.level.block.entity.TileEntityLootable
 @Suppress("NOTHING_TO_INLINE")
 @JvmInline
 value class NMSTileEntity(override val nms: TileEntity): NMSWrapper<TileEntity> {
+    inline val pos: NMSBlockPos get() = NMSBlockPos(nms.position)
+
     inline val isLootableInventoryHolder: Boolean
         get() = nms is TileEntityLootable
 

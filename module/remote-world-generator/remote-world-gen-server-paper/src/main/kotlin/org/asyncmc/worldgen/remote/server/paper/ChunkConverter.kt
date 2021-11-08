@@ -3,10 +3,6 @@ package org.asyncmc.worldgen.remote.server.paper
 import br.com.gamemods.nbtmanipulator.NbtFile
 import br.com.gamemods.nbtmanipulator.NbtLongArray
 import com.destroystokyo.paper.loottable.LootableBlockInventory
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.suspendCancellableCoroutine
 import org.asyncmc.worldgen.remote.data.*
 import org.asyncmc.worldgen.remote.server.paper.access.nms.*
 import org.bukkit.Bukkit
@@ -15,8 +11,6 @@ import org.bukkit.block.Container
 import org.bukkit.entity.Entity
 import org.bukkit.loot.LootContext
 import java.util.concurrent.ThreadLocalRandom
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import br.com.gamemods.nbtmanipulator.NbtCompound as OurNbtCompound
 
 @Suppress("TYPE_MISMATCH_WARNING")
@@ -39,43 +33,35 @@ object ChunkConverter {
     val blockRegistry: NMSIRegistry<*, NMSBlock> = registryNms[RegistryAccess.BLOCK_REGISTRY]
     val biomeRegistry: NMSIRegistry<*, NMSBiomeBase> = registryNms[RegistryAccess.BIOME_REGISTRY]
 
-    suspend fun convert(
+    fun convert(
         plugin: AsyncMcPaperWorldGenServer,
         chunk: Chunk,
-        includeHeightMaps: Boolean,
-        includeLightMaps: Boolean,
-        includeStructures: Boolean,
-        openTreasures: Boolean
-    ): RemoteChunk {
+        requestedChunkData: RequestedChunkData,
+    ): RemoteChunk? {
+        val includeHeightMaps = requestedChunkData.heightMaps
+        val includeLightMaps =  requestedChunkData.lightMaps
+        val includeStructures = requestedChunkData.structures
+        val openTreasures = requestedChunkData.openedTreasures
         val chunkNms = chunk.asWrappedNMS()
         val worldNms = chunk.world.asWrappedNMS()
 
-
-        /*val chunkProvider = object : ChunkProvider {
-            override fun getChunk(chunkX: Int, chunkZ: Int): BlockView? {
-                return chunk.takeIf { chunkX == chunk.pos.x && chunkZ == chunk.pos.z }
-            }
-
-            override fun getWorld(): BlockView {
-                return chunk.world
-            }
-        }
-
-        val blockLightProvider = object : BlockLightStorage(chunkProvider) {}
-        val skyLightProvider = object : SkyLightStorage(chunkProvider) {}*/
         val chunkHeightElementBits = NMSMathHelper.log2DeBruijn(chunkNms.height + 1)
+        val expectedTiles = mutableSetOf<NMSBlockPos>()
+        val blockStates = convertBlockPalette(chunkNms, blockRegistry, expectedTiles)
+        val tiles = chunkNms.tileEntities
+        if (!tiles.keys.containsAll(expectedTiles)) {
+            plugin.logger.fine{ "The following tile entities are missing: ${expectedTiles - tiles.keys}" }
+            return null
+        }
         return RemoteChunk(
             chunk.x,
             chunk.z,
             chunkNms.minBuildHeight,
             chunkNms.height,
-            convertBlockPalette(chunkNms, blockRegistry),
-            coroutineScope {
-                chunkNms.tileEntities.entries
-                    .map { async { convertBlockEntity(plugin, it, blockEntityRegistry, chunk, openTreasures) } }
-                    .awaitAll()
+            blockStates,
+            tiles.map {
+                convertBlockEntity(plugin, it, blockEntityRegistry, chunk, openTreasures)
             },
-            chunk.entities.map { convertEntity(it, entityRegistry) },
             convertBiomes(checkNotNull(chunkNms.biomeArray), biomeRegistry),
             if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, blockLightProvider),
             if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, skyLightProvider),
@@ -98,20 +84,10 @@ object ChunkConverter {
                     structures["REFERENCES"] = OurNbtCompound(chunkNms.structureReferences.entries.map { (feature, ref) ->
                         feature.name to NbtLongArray(ref.toLongArray())
                     })
-                }).serialize()
+                }).serialize(),
+            emptyList(),
         )
     }
-
-    /*private fun convertLightMap(chunk: WorldChunk, lightProvider: LightStorage<*>): RemoteLightMap {
-        return RemoteLightMap(
-            chunk.sectionArray.asSequence().flatMapIndexed { index, _ ->
-                checkNotNull(lightProvider.getLightSection(ChunkSectionPos.from(chunk.pos, index).asLong()))
-                    .asByteArray()
-                    .asSequence()
-                    .map { it.toInt() }
-            }.toList().toIntArray()
-        )
-    }*/
 
     private fun convertFluidTickSchedule(tickScheduler: NMSTickList<*>): SerializedNbtFile {
         return convertTickSchedule(tickScheduler)
@@ -128,7 +104,7 @@ object ChunkConverter {
         return compound.toSerializedNbtFile()
     }
 
-    private fun convertBlockPalette(chunk: NMSChunk, blockRegistry: NMSIRegistry<*, NMSBlock>): List<RemotePaletteBlockStates> {
+    private fun convertBlockPalette(chunk: NMSChunk, blockRegistry: NMSIRegistry<*, NMSBlock>, expectedTiles: MutableSet<NMSBlockPos>): List<RemotePaletteBlockStates> {
         val states = chunk.sections
             .flatMap { chunkSection ->
                 if (chunkSection == null || NMSChunkSection.isEmpty(chunkSection)) {
@@ -140,6 +116,14 @@ object ChunkConverter {
                                 for (z in 0..0xF) {
                                     val mcState = chunkSection.getBlockState(x, y, z)
                                     val converted = convertBlockState(mcState, blockRegistry)
+                                    if (mcState.block.hasTile) {
+                                        val chunkPos = chunk.pos
+                                        expectedTiles += NMSBlockPos(
+                                            chunkPos.firstBlockX + x,
+                                            y + chunkSection.yPos,
+                                            chunkPos.firstBlockZ + z,
+                                        )
+                                    }
                                     yield(converted)
                                 }
                             }
@@ -161,58 +145,50 @@ object ChunkConverter {
         )
     }
 
-    private suspend fun convertBlockEntity(
+    private fun convertBlockEntity(
         plugin: AsyncMcPaperWorldGenServer,
         entry: Map.Entry<NMSBlockPos, NMSTileEntity>,
         registry: NMSIRegistry<*, NMSTileEntityTypes<*>>,
         chunk: Chunk,
         openTreasures: Boolean
-    ): RemoteEntity {
+    ): RemoteBlockEntity {
         val (pos, tile) = entry
         val previousNbt = tile.save(NMSNBTTagCompound())
         var revert = false
         if (openTreasures && tile.isLootableInventoryHolder) {
-            suspendCancellableCoroutine<Unit> { continuation ->
-                val task = plugin.server.scheduler.runTask(plugin, Runnable {
-                    try {
-                        val state = chunk.getBlock(pos.x and 0xF, pos.y, pos.z and 0xF).state as? LootableBlockInventory
-                        val lootTable = state?.lootTable
-                        if (lootTable != null && state is Container) {
-                            val inv = state.inventory
-                            inv.clear()
-                            lootTable.fillInventory(
-                                inv,
-                                ThreadLocalRandom.current(),
-                                LootContext.Builder((state as LootableBlockInventory).block.location).build()
-                            )
-                        }
-                        continuation.resume(Unit)
-                    } catch (e: Throwable) {
-                        continuation.resumeWithException(e)
-                    }
-                })
-                continuation.invokeOnCancellation { task.cancel() }
+            val state = chunk.getBlock(pos.x and 0xF, pos.y, pos.z and 0xF).state as? LootableBlockInventory
+            val lootTable = state?.lootTable
+            if (lootTable != null && state is Container) {
+                val inv = state.inventory
+                inv.clear()
+                lootTable.fillInventory(
+                    inv,
+                    ThreadLocalRandom.current(),
+                    LootContext.Builder((state as LootableBlockInventory).block.location).build()
+                )
             }
             revert = true
         }
-        return RemoteEntity(
+        return RemoteBlockEntity(
             id = checkNotNull(registry.getId(tile.tileType)).toString(),
-            x = pos.x.toFloat(),
-            y = pos.y.toFloat(),
-            z = pos.z.toFloat(),
+            x = pos.x,
+            y = pos.y,
+            z = pos.z,
             nbt = tile.save(NMSNBTTagCompound()).toSerializedNbtFile()
         ).also {
             if (revert) {
-                tile.load(previousNbt)
+                plugin.server.scheduler.runTask(plugin, Runnable {
+                    tile.load(previousNbt)
+                })
             }
         }
     }
 
-    private fun convertEntity(entity: Entity, registry: NMSIRegistry<*, NMSEntityTypes<*>>): RemoteEntity {
+    fun convertEntity(entity: Entity): RemoteEntity {
         val entityNms = entity.asWrappedNMS()
         val pos = entity.location
         return RemoteEntity(
-            id = checkNotNull(registry.getId(entityNms.entityType)).toString(),
+            id = checkNotNull(entityRegistry.getId(entityNms.entityType)).toString(),
             x = pos.x.toFloat(),
             y = pos.y.toFloat(),
             z = pos.z.toFloat(),
