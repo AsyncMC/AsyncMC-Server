@@ -71,6 +71,7 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             "item_frame" to ItemFrameEntityConverter(),
             "end_crystal" to EndCrystalEntityFactory(),
             "shulker" to ShulkerEntityFactory(),
+            "villager" to VillagerEntityFactory(),
         ).associate { (id, factory) -> "minecraft:$id" to factory }
             .also { RemoteToPowerNukkitConverter.addEntityFactories(it) }
     }

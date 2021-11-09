@@ -1,12 +1,14 @@
 package org.asyncmc.worldgen.remote.client.powernukkit.entities
 
+import cn.nukkit.block.BlockID
 import cn.nukkit.entity.Entity
+import cn.nukkit.item.Item
+import cn.nukkit.item.ItemID
 import cn.nukkit.level.format.generic.BaseFullChunk
 import cn.nukkit.math.Vector3
-import cn.nukkit.nbt.tag.CompoundTag
-import cn.nukkit.nbt.tag.DoubleTag
-import cn.nukkit.nbt.tag.FloatTag
-import cn.nukkit.nbt.tag.Tag
+import cn.nukkit.nbt.NBTIO
+import cn.nukkit.nbt.tag.*
+import org.asyncmc.worldgen.remote.client.powernukkit.RemoteToPowerNukkitConverter
 import org.asyncmc.worldgen.remote.client.powernukkit.deserializeForNukkit
 import org.asyncmc.worldgen.remote.data.RemoteEntity
 
@@ -61,12 +63,74 @@ internal abstract class EntityFactory {
         nbt.putBoolean("OnGround", entityNbt.getBoolean("OnGround"))
         nbt.putBoolean("Invulnerable", entityNbt.getBoolean("Invulnerable"))
         nbt.putFloat("Scale", 1F)
-        if (entityNbt.containsString("CustomName")) {
-            nbt.putString("CustomName", entityNbt.getString("CustomName"))
+
+        val age = entityNbt.getInt("Age")
+        nbt.putBoolean("IsBaby", age < 0)
+        nbt.putBoolean("Baby", age < 0) // MobPlugin support
+        nbt.putInt("Age", age) // MobPlugin support
+
+        //if (entityNbt.containsString("CustomName")) {
+        //    nbt.putString("CustomName", entityNbt.getString("CustomName"))
+        //}
+
+        //if (entityNbt.containsByte("CustomNameVisible")) {
+        //    nbt.putBoolean("CustomNameVisible", entityNbt.getBoolean("CustomNameVisible"))
+        //}
+
+        if (entityNbt.containsByte("PersistenceRequired") && entityNbt.getBoolean("PersistenceRequired")) {
+            nbt.putBoolean("Persistent", true)
         }
-        if (entityNbt.containsByte("CustomNameVisible")) {
-            nbt.putBoolean("CustomNameVisible", entityNbt.getBoolean("CustomNameVisible"))
+
+        if (entityNbt.containsCompound("SaddleItem")) {
+            val saddle = RemoteToPowerNukkitConverter.convertItem(entityNbt.getCompound("SaddleItem")) ?: air
+            if (saddle.id == ItemID.SADDLE) {
+                nbt.putBoolean("Saddled", true)
+            }
         }
+
+        if (entityNbt.containsByte("ChestedHorse")) {
+            nbt.putBoolean("Chested", true)
+        }
+
+        if (entityNbt.getInt("AngerTime") > 0) {
+            nbt.putBoolean("IsAngry", true)
+        }
+
+
+        if (entityNbt.containsInt("Variant")) {
+            nbt.putInt("Variant", entityNbt.getInt("Variant"))
+        }
+
+        if (entityNbt.containsList("ArmorItems", Tag.TAG_Compound)) {
+            val armor = entityNbt.getList("ArmorItems", CompoundTag::class.java)
+            val feet = RemoteToPowerNukkitConverter.convertItem(armor[0]) ?: air
+            val legs = RemoteToPowerNukkitConverter.convertItem(armor[1]) ?: air
+            val chest = RemoteToPowerNukkitConverter.convertItem(armor[2]) ?: air
+            var head = RemoteToPowerNukkitConverter.convertItem(armor[3]) ?: air
+            if (head.id == ItemID.BANNER) {
+                nbt.putBoolean("IsIllagerCaptain", true)
+                head = air
+            }
+            nbt.putList(ListTag<CompoundTag>("Armor")
+                .add(NBTIO.putItemHelper(head))
+                .add(NBTIO.putItemHelper(chest))
+                .add(NBTIO.putItemHelper(legs))
+                .add(NBTIO.putItemHelper(feet))
+            )
+        }
+
+        if (entityNbt.containsList("HandItems", Tag.TAG_Compound)) {
+            val hands = entityNbt.getList("HandItems", CompoundTag::class.java)
+            if (hands.size() > 0) {
+                val hand = RemoteToPowerNukkitConverter.convertItem(hands[0]) ?: air
+                nbt.putList(ListTag<CompoundTag>("Mainhand").add(NBTIO.putItemHelper(hand)))
+            }
+            if (hands.size() > 1) {
+                val hand = RemoteToPowerNukkitConverter.convertItem(hands[0]) ?: air
+                nbt.putList(ListTag<CompoundTag>("Offhand").add(NBTIO.putItemHelper(hand)))
+            }
+        }
+
         if (adjustNbt(remoteEntity, nukkitId, chunk, entityNbt, nbt)) {
             val entity = Entity.createEntity(nukkitId, chunk, nbt)
             if (entity == null) {
@@ -78,6 +142,7 @@ internal abstract class EntityFactory {
     }
 
     companion object {
+        private val air get() = Item.getBlock(BlockID.AIR)
         val unknownEntities = mutableSetOf<String>()
     }
 }
