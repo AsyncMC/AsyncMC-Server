@@ -21,7 +21,7 @@ fun CompoundTag.serialize(): SerializedNbtFile {
         littleEndian = false,
         compressed = true,
         data = ByteArrayOutputStream().also { bos ->
-            NBTIO.writeNetworkGZIPCompressed(this, bos, ByteOrder.BIG_ENDIAN)
+            NBTIO.writeGZIPCompressed(this, bos, ByteOrder.BIG_ENDIAN)
         }.toByteArray()
     )
 }
