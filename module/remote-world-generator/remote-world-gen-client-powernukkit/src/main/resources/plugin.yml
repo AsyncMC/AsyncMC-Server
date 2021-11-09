@@ -2,7 +2,10 @@ name: AsyncMcRemoteWorldGenClient
 main: org.asyncmc.worldgen.remote.client.powernukkit.AsyncMcWorldGenPowerNukkitClientPlugin
 version: "@version@"
 api: ["1.0.13"]
-#depend:
-#  - KotlinLib
+depend:
+  - PowerNukkit
+  #- KotlinLib
+softdepend:
+  - MobPlugin
 author: "joserobjr <joserobjr@powernukkit.org>"
 load: STARTUP

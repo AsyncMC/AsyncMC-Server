@@ -3,6 +3,7 @@ package org.asyncmc.worldgen.remote.client.powernukkit
 import cn.nukkit.block.Block
 import cn.nukkit.block.BlockID
 import cn.nukkit.block.BlockUnknown
+import cn.nukkit.blockentity.BlockEntity
 import cn.nukkit.blockproperty.BooleanBlockProperty
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.item.Item
@@ -28,6 +29,7 @@ import org.powernukkit.plugins.kotlin.KotlinPluginBase
 import java.io.FileNotFoundException
 import java.io.InputStream
 
+
 @PublishedApi
 internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
     lateinit var backend: Url
@@ -39,6 +41,9 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         registerBiomes()
 
         server.pluginManager.registerEvents(EntityFixer(), this)
+        if (server.pluginManager.getPlugin("MobPlugin")?.isEnabled != true) {
+            BlockEntity.registerBlockEntity(BlockEntity.MOB_SPAWNER, BlockEntityMobSpawner::class.java)
+        }
 
         backend = Url(requireNotNull(config.getString("default-backend")) {
             "No default world backend was defined, the AsyncMc Remote World Generation plugin cannot continue."
@@ -74,6 +79,15 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             "villager" to VillagerEntityFactory(),
         ).associate { (id, factory) -> "minecraft:$id" to factory }
             .also { RemoteToPowerNukkitConverter.addEntityFactories(it) }
+
+        /*val bedrockEntityIds = useResource("$MAPPINGS/../bedrock-entity-ids.txt") { input ->
+            input.bufferedReader().lineSequence()
+                .filter { it.isNotBlank() }
+                .map { it.split('=', limit = 2) }
+                .associateTo(Int2ObjectOpenHashMap()) { (numeric, string) -> numeric.toInt() to string }
+        }
+
+        RemoteToPowerNukkitConverter.addEntityIds(bedrockEntityIds)*/
     }
 
     private fun registerBiomes() {

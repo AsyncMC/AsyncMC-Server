@@ -29,6 +29,7 @@ import org.asyncmc.worldgen.remote.client.powernukkit.entities.EntityFactory
 import org.asyncmc.worldgen.remote.data.RemoteBlockEntity
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
 import org.asyncmc.worldgen.remote.data.RemoteEntity
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.full.createInstance
 import kotlin.reflect.full.isSuperclassOf
@@ -46,6 +47,8 @@ internal object RemoteToPowerNukkitConverter {
     private val itemIdDataMappings = hashMapOf<String, ItemIdData>()
 
     private val enchantmentMappings = hashMapOf<String, Int>()
+
+    //private val entityIdsNumericToNamespced = Int2ObjectOpenHashMap<String>()
 
     private val explosionColors by lazy {
         Int2ObjectOpenHashMap<DyeColor>(16).also {
@@ -108,7 +111,14 @@ internal object RemoteToPowerNukkitConverter {
             }
 
         blocksWithEntity[BlockID.BREWING_STAND_BLOCK] = BlockEntity.BREWING_STAND
+        blocksWithEntity[BlockID.MOB_SPAWNER] = "MobSpawner"
     }
+
+    /*internal fun getEntityNamespacedId(id: Int) = entityIdsNumericToNamespced[id]
+
+    internal fun addEntityIds(bedrockEntityIds: Int2ObjectMap<String>) {
+        entityIdsNumericToNamespced += bedrockEntityIds
+    }*/
 
     internal fun addItemMappings(mappings: Map<String, ItemIdData>) {
         itemIdDataMappings += mappings
@@ -181,6 +191,17 @@ internal object RemoteToPowerNukkitConverter {
         val blockEntityType = blocksWithEntity[blockState.blockId] ?: return null
         val bx = (chunk.x shl 4) + cx
         val bz = (chunk.z shl 4) + cz
+        var entityNbt: CompoundTag? = null
+        try {
+            entityNbt = remoteBlockEntity?.nbt?.deserializeForNukkit()
+            if (entityNbt != null) {
+                adjustBlockEntityNbt(blockEntityType, nbt, entityNbt)
+            }
+        } catch (e: Exception) {
+            plugin.log.error(e) {
+                "Failed to adjust the block entity NBT at x:$bx y:$cy z:$bz"
+            }
+        }
         return BlockEntity.createBlockEntity(
             blockEntityType,
             chunk,
@@ -193,7 +214,7 @@ internal object RemoteToPowerNukkitConverter {
                 plugin.log.error { "Could not create the block entity for $blockState" }
                 return null
             }
-            if (remoteBlockEntity == null) {
+            if (entityNbt == null) {
                 when (blockEntity) {
                     is BlockEntityItemFrame, is BlockEntityFlowerPot, is BlockEntityCauldron -> Unit // No problem
                     else -> plugin.log.warn { "There's no remote block entity for the block at ${blockEntity.location}" }
@@ -201,7 +222,7 @@ internal object RemoteToPowerNukkitConverter {
                 return blockEntity
             }
             try {
-                applyBlockEntityData(remoteBlockState, remoteBlockEntity, blockEntity)
+                applyBlockEntityData(remoteBlockState, entityNbt, blockEntity)
             } catch (e: Exception) {
                 plugin.log.error(e) { "Error while applying block entity data for $blockState" }
             }
@@ -209,8 +230,31 @@ internal object RemoteToPowerNukkitConverter {
         }
     }
 
-    private fun applyBlockEntityData(remoteBlock: RemoteBlockState?, remoteBlockEntity: RemoteBlockEntity, entity: BlockEntity) {
-        val entityNbt = remoteBlockEntity.nbt.deserializeForNukkit()
+    private fun adjustBlockEntityNbt(blockEntityType: String, nbt: CompoundTag, entityNbt: CompoundTag) {
+        when (blockEntityType) {
+            BlockEntity.MOB_SPAWNER -> {
+                nbt.putShort("Delay", entityNbt.getShort("Delay"))
+                nbt.putShort("MinSpawnDelay", entityNbt.getShort("MinSpawnDelay"))
+                nbt.putShort("MaxSpawnDelay", entityNbt.getShort("MaxSpawnDelay"))
+                nbt.putShort("SpawnCount", entityNbt.getShort("SpawnCount"))
+                nbt.putShort("MaxNearbyEntities", entityNbt.getShort("MaxNearbyEntities"))
+                nbt.putShort("RequiredPlayerRange", entityNbt.getShort("RequiredPlayerRange"))
+                nbt.putShort("SpawnRange", entityNbt.getShort("SpawnRange"))
+                if (entityNbt.containsList("SpawnPotentials", Tag.TAG_Compound)) {
+                    val spawnPotentials = entityNbt.getList("SpawnPotentials", CompoundTag::class.java)
+                    if (spawnPotentials.size() > 0) {
+                        val namespacedId = spawnPotentials.get(0).getCompound("Entity").getString("id")
+                        val entityId = entityFactories[namespacedId]?.nukkitId ?: OptionalInt.empty()
+                        if (entityId.isPresent) {
+                            nbt.putInt("EntityId", entityId.asInt)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun applyBlockEntityData(remoteBlock: RemoteBlockState?, entityNbt: CompoundTag, entity: BlockEntity) {
         if (entity is InventoryHolder && entityNbt.containsList("Items", Tag.TAG_Compound)) {
             val slotRemapping = allSlotRemappings[entity.saveId]
             val inventory = entity.inventory

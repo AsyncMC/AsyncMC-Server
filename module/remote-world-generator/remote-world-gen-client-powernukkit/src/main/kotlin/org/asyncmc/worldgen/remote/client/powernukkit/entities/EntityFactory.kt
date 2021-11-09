@@ -11,8 +11,11 @@ import cn.nukkit.nbt.tag.*
 import org.asyncmc.worldgen.remote.client.powernukkit.RemoteToPowerNukkitConverter
 import org.asyncmc.worldgen.remote.client.powernukkit.deserializeForNukkit
 import org.asyncmc.worldgen.remote.data.RemoteEntity
+import java.util.*
 
 internal abstract class EntityFactory {
+    abstract val nukkitId: OptionalInt
+
     abstract fun createEntity(remoteEntity: RemoteEntity, chunk: BaseFullChunk): Entity?
 
     protected open fun adjustNbt(

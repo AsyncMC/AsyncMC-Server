@@ -12,10 +12,14 @@ import org.asyncmc.worldgen.remote.client.powernukkit.RemoteToPowerNukkitConvert
 import org.asyncmc.worldgen.remote.client.powernukkit.deserializeForNukkit
 import org.asyncmc.worldgen.remote.client.powernukkit.plugin
 import org.asyncmc.worldgen.remote.data.RemoteEntity
+import java.util.*
 
 internal class ItemFrameEntityConverter: EntityFactory() {
     private val water = BlockState.of(BlockID.WATER)
     private val torch = BlockState.of(BlockID.TORCH)
+
+    override val nukkitId: OptionalInt
+        get() = OptionalInt.empty()
 
     override fun createEntity(remoteEntity: RemoteEntity, chunk: BaseFullChunk): Nothing? {
         val nbt = remoteEntity.nbt.deserializeForNukkit()

@@ -141,7 +141,11 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
 
     @OptIn(ExperimentalPowerNukkitKotlinApi::class)
     override fun populateChunk(chunkX: Int, chunkZ: Int) {
-        val level: Level = chunkProvider.getChunk(chunkX, chunkZ).provider.level
+        val level: Level = chunkProvider.getChunk(chunkX, chunkZ).provider?.level ?: run {
+            plugin.log.warn { "The chunk population of cx:${chunkX} cz:${chunkZ} was aborted!" }
+            return
+        }
+
         CoroutineScope(Dispatchers.IO).launch {
             val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
             var retries = 0
@@ -185,7 +189,7 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
                     throw SilentRetry
                 }
                 HttpStatusCode.NotFound -> {
-                    plugin.log.error(e) { "The remote world handler $remoteWorldName is no longer valid, trying to refresh it" }
+                    plugin.log.error { "The remote world handler $remoteWorldName is no longer valid, trying to refresh it" }
                     coroutineScope {
                         sendPrepareWorldRequestAsync().await()
                     }
