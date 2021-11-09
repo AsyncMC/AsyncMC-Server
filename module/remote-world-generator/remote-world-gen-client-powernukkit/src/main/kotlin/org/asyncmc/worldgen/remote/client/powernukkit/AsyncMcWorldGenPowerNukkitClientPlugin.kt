@@ -21,10 +21,8 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.jsonPrimitive
 import org.asyncmc.worldgen.remote.client.powernukkit.RemoteToPowerNukkitConverter.LayeredBlockState
 import org.asyncmc.worldgen.remote.client.powernukkit.biomes.*
-import org.asyncmc.worldgen.remote.client.powernukkit.entities.EndCrystalEntityFactory
-import org.asyncmc.worldgen.remote.client.powernukkit.entities.GenericEntityFactory
-import org.asyncmc.worldgen.remote.client.powernukkit.entities.GiantEntityFactory
-import org.asyncmc.worldgen.remote.client.powernukkit.entities.ItemFrameEntityConverter
+import org.asyncmc.worldgen.remote.client.powernukkit.entities.*
+import org.asyncmc.worldgen.remote.client.powernukkit.listeners.EntityFixer
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
 import org.powernukkit.plugins.kotlin.KotlinPluginBase
 import java.io.FileNotFoundException
@@ -39,6 +37,8 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         saveDefaultConfig()
         reloadConfig()
         registerBiomes()
+
+        server.pluginManager.registerEvents(EntityFixer(), this)
 
         backend = Url(requireNotNull(config.getString("default-backend")) {
             "No default world backend was defined, the AsyncMc Remote World Generation plugin cannot continue."
@@ -70,6 +70,7 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             "giant" to GiantEntityFactory(),
             "item_frame" to ItemFrameEntityConverter(),
             "end_crystal" to EndCrystalEntityFactory(),
+            "shulker" to ShulkerEntityFactory(),
         ).associate { (id, factory) -> "minecraft:$id" to factory }
             .also { RemoteToPowerNukkitConverter.addEntityFactories(it) }
     }
