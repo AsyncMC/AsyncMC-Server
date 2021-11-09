@@ -194,8 +194,9 @@ internal object RemoteToPowerNukkitConverter {
                 return null
             }
             if (remoteBlockEntity == null) {
-                if (blockEntity !is BlockEntityItemFrame) {
-                    plugin.log.warn { "There's no remote block entity for the block at ${blockEntity.location}" }
+                when (blockEntity) {
+                    is BlockEntityItemFrame, is BlockEntityFlowerPot, is BlockEntityCauldron -> Unit // No problem
+                    else -> plugin.log.warn { "There's no remote block entity for the block at ${blockEntity.location}" }
                 }
                 return blockEntity
             }
@@ -257,7 +258,7 @@ internal object RemoteToPowerNukkitConverter {
             }
             is BlockEntityBed -> {
                 requireNotNull(remoteBlock)
-                val colorName = remoteBlock.id.substringAfter(':').substringBeforeLast("_bed")
+                val colorName = remoteBlock.id.substringAfter(':').substringBeforeLast("_bed").uppercase()
                 val color = DyeColor.valueOf(colorName)
                 entity.color = color.dyeData
             }

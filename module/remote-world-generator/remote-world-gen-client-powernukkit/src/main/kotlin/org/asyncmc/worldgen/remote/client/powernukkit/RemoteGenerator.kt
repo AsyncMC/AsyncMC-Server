@@ -20,9 +20,11 @@ import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import org.asyncmc.worldgen.remote.data.*
+import org.powernukkit.plugins.kotlin.ExperimentalPowerNukkitKotlinApi
+import org.powernukkit.plugins.kotlin.runInMain
 
 internal abstract class RemoteGenerator(val options: Map<String, Any>): Generator() {
-    protected lateinit var level: ChunkManager
+    protected lateinit var chunkProvider: ChunkManager
     protected lateinit var random: NukkitRandom
     private var remoteNameAsync: Deferred<String>? = null
     private var remoteName: String? = null
@@ -48,7 +50,7 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
                 Level.DIMENSION_THE_END -> MinecraftDimension.DIMENSION_THE_END
                 else -> error("Unsupported dimension $dimension")
             },
-            level.seed,
+            chunkProvider.seed,
             options.getOrDefault("generate-structures", true).toString().toBoolean()
         )
     }
@@ -84,7 +86,7 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
 
     @OptIn(ExperimentalSerializationApi::class)
     override fun init(level: ChunkManager, random: NukkitRandom) {
-        this.level = level
+        this.chunkProvider = level
         this.random = random
         if (remoteNameAsync != null) {
             return
@@ -112,12 +114,12 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
     override fun generateChunk(chunkX: Int, chunkZ: Int) {
         val remoteChunkAsync = CoroutineScope(Dispatchers.IO).async {
             val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
-            keepTrying({"Could not receive the remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $level"}) {
+            keepTrying({"Could not receive the remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $chunkProvider"}) {
                 requestData<RemoteChunk>("chunk/create", chunkX, chunkZ, cachedSettings)
             }
         }
 
-        val chunk = level.getChunk(chunkX, chunkZ)
+        val chunk = chunkProvider.getChunk(chunkX, chunkZ)
         val remoteChunk = runBlocking { remoteChunkAsync.await() }
 
         setBiomes(remoteChunk, chunk)
@@ -137,23 +139,30 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         setBlockStates(remoteChunk, chunk, blockEntities)
     }
 
+    @OptIn(ExperimentalPowerNukkitKotlinApi::class)
     override fun populateChunk(chunkX: Int, chunkZ: Int) {
-        val remoteEntitiesAsync = CoroutineScope(Dispatchers.IO).async {
+        val level: Level = chunkProvider.getChunk(chunkX, chunkZ).provider.level
+        CoroutineScope(Dispatchers.IO).launch {
             val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
             var retries = 0
-            keepTrying({"Could not receive the entities from remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $level"}) {
+            val remoteEntities = keepTrying({"Could not receive the entities from remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $level"}) {
                 if (retries++ >= 10) {
                     plugin.log.error { "Giving up on the entities at chunk x=$chunkX, z=$chunkX - $level" }
                     return@keepTrying null
                 }
                 requestData<List<RemoteEntity>>("entities/list", chunkX, chunkZ, requestEntities)
             }
-        }
-
-        val chunk = level.getChunk(chunkX, chunkZ)
-        val remoteEntities = runBlocking { remoteEntitiesAsync.await() } ?: return
-        if (remoteEntities.isNotEmpty()) {
-            createEntities(remoteEntities, chunk)
+            if (!remoteEntities.isNullOrEmpty()) {
+                runInMain(plugin) {
+                    val chunk = chunkProvider.getChunk(chunkX, chunkZ)
+                        ?: level.getChunk(chunkX, chunkZ, false)
+                    if (chunk == null) {
+                        plugin.log.error { "Failed to populate the chunk x:$chunkX z:$chunkZ at ${level.name} because the chunk was null" }
+                    } else {
+                        createEntities(remoteEntities, chunk)
+                    }
+                }
+            }
         }
     }
 
@@ -268,6 +277,6 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
     }
 
     override fun getChunkManager(): ChunkManager {
-        return level
+        return chunkProvider
     }
 }
