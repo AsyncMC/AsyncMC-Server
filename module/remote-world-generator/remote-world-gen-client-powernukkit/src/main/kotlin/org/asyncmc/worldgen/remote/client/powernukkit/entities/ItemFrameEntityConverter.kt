@@ -11,14 +11,13 @@ import cn.nukkit.math.BlockFace
 import org.asyncmc.worldgen.remote.client.powernukkit.RemoteToPowerNukkitConverter
 import org.asyncmc.worldgen.remote.client.powernukkit.deserializeForNukkit
 import org.asyncmc.worldgen.remote.client.powernukkit.plugin
-import org.asyncmc.worldgen.remote.data.RemoteChunk
 import org.asyncmc.worldgen.remote.data.RemoteEntity
 
 internal class ItemFrameEntityConverter: EntityFactory() {
     private val water = BlockState.of(BlockID.WATER)
     private val torch = BlockState.of(BlockID.TORCH)
 
-    override fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, chunk: BaseFullChunk): Nothing? {
+    override fun createEntity(remoteEntity: RemoteEntity, chunk: BaseFullChunk): Nothing? {
         val nbt = remoteEntity.nbt.deserializeForNukkit()
         val bx = nbt.getInt("TileX")
         val by = nbt.getInt("TileY")
@@ -57,7 +56,7 @@ internal class ItemFrameEntityConverter: EntityFactory() {
             chunk.setBlockStateAt(cx, cy, cz, 1, water)
         }
         chunk.setBlockStateAt(cx, cy, cz, 0, state)
-        val blockEntity = RemoteToPowerNukkitConverter.createDefaultBlockEntity(state, chunk, cx, cy, cz, null, remoteChunk) as? BlockEntityItemFrame ?: return null
+        val blockEntity = RemoteToPowerNukkitConverter.createDefaultBlockEntity(state, chunk, cx, cy, cz, null, null) as? BlockEntityItemFrame ?: return null
         if (itemId.isBlank() || itemId == "minecraft:air") {
             return null
         }

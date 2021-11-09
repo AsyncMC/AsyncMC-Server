@@ -45,7 +45,6 @@ object ChunkConverter {
         val chunkNms = chunk.asWrappedNMS()
         val worldNms = chunk.world.asWrappedNMS()
 
-        val chunkHeightElementBits = NMSMathHelper.log2DeBruijn(chunkNms.height + 1)
         val blockStates: List<RemotePaletteBlockStates>
         val tileEntities: List<RemoteBlockEntity>
         if (!requestedChunkData.blockStates) {
@@ -77,17 +76,12 @@ object ChunkConverter {
             tileEntities,
             convertBiomes(checkNotNull(chunkNms.biomeArray), biomeRegistry),
             if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, blockLightProvider),
-            if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, skyLightProvider),
-            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.MOTION_BLOCKING), chunkHeightElementBits) else null,
-            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.MOTION_BLOCKING_NO_LEAVES), chunkHeightElementBits) else null,
-            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.OCEAN_FLOOR), chunkHeightElementBits) else null,
-            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.OCEAN_FLOOR_WG), chunkHeightElementBits) else null,
-            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.WORLD_SURFACE), chunkHeightElementBits) else null,
-            if (includeHeightMaps) convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.WORLD_SURFACE_WG), chunkHeightElementBits) else null,
+            //if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, skyLightProvider),
+            if (includeHeightMaps) convertHeightMaps(chunkNms) else null,
             convertBlockTickSchedule(chunkNms.blockTickScheduler),
             convertFluidTickSchedule(chunkNms.fluidTickScheduler),
-            emptyList(),
-            emptyList(),
+            //emptyList(),
+            //emptyList(),
             if (!includeStructures) null else
                 NbtFile("asyncmc:structures", OurNbtCompound().also { structures ->
                     structures["START"] = OurNbtCompound(chunkNms.structureStarts.entries.map { (feature, start) ->
@@ -98,7 +92,18 @@ object ChunkConverter {
                         feature.name to NbtLongArray(ref.toLongArray())
                     })
                 }).serialize(),
-            emptyList(),
+        )
+    }
+
+    private fun convertHeightMaps(chunkNms: NMSChunk): RemoteHeightMaps {
+        val chunkHeightElementBits = NMSMathHelper.log2DeBruijn(chunkNms.height + 1)
+        return RemoteHeightMaps(
+            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.MOTION_BLOCKING), chunkHeightElementBits),
+            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.MOTION_BLOCKING_NO_LEAVES), chunkHeightElementBits),
+            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.OCEAN_FLOOR), chunkHeightElementBits),
+            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.OCEAN_FLOOR_WG), chunkHeightElementBits),
+            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.WORLD_SURFACE), chunkHeightElementBits),
+            convertHeightMap(chunkNms.getHeightmap(NMSHeightMapType.WORLD_SURFACE_WG), chunkHeightElementBits),
         )
     }
 

@@ -44,9 +44,6 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             "No default world backend was defined, the AsyncMc Remote World Generation plugin cannot continue."
         })
         httpClient = HttpClient(CIO)
-        Generator.addGenerator(RemoteOverworldGenerator::class.java, RemoteOverworldGenerator.NAME, 0)
-        Generator.addGenerator(RemoteNetherGenerator::class.java, RemoteNetherGenerator.NAME, 0)
-        Generator.addGenerator(RemoteTheEndGenerator::class.java, RemoteTheEndGenerator.NAME, 0)
 
         RemoteToPowerNukkitConverter.detectBlockStatesWithEntity()
         loadEnchantmentMappings()
@@ -54,6 +51,10 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         loadBiomeMappings()
         loadBlockMappings()
         loadEntityMappings()
+
+        Generator.addGenerator(RemoteOverworldGenerator::class.java, RemoteOverworldGenerator.NAME, 0)
+        Generator.addGenerator(RemoteNetherGenerator::class.java, RemoteNetherGenerator.NAME, 0)
+        Generator.addGenerator(RemoteTheEndGenerator::class.java, RemoteTheEndGenerator.NAME, 0)
     }
 
     private fun loadEntityMappings() {

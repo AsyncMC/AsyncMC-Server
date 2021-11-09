@@ -7,14 +7,12 @@ import cn.nukkit.nbt.tag.CompoundTag
 import cn.nukkit.nbt.tag.DoubleTag
 import cn.nukkit.nbt.tag.FloatTag
 import org.asyncmc.worldgen.remote.client.powernukkit.deserializeForNukkit
-import org.asyncmc.worldgen.remote.data.RemoteChunk
 import org.asyncmc.worldgen.remote.data.RemoteEntity
 
 internal abstract class EntityFactory {
-    abstract fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, chunk: BaseFullChunk): Entity?
+    abstract fun createEntity(remoteEntity: RemoteEntity, chunk: BaseFullChunk): Entity?
 
     protected open fun adjustNbt(
-        remoteChunk: RemoteChunk,
         remoteEntity: RemoteEntity,
         nukkitId: String,
         chunk: BaseFullChunk,
@@ -22,7 +20,7 @@ internal abstract class EntityFactory {
         nbt: CompoundTag,
     ): Boolean = true
 
-    protected open fun createEntity(remoteChunk: RemoteChunk, remoteEntity: RemoteEntity, nukkitId: String?, chunk: BaseFullChunk): Entity? {
+    protected open fun createEntity(remoteEntity: RemoteEntity, nukkitId: String?, chunk: BaseFullChunk): Entity? {
         if (nukkitId.isNullOrBlank() || nukkitId in unknownEntities) {
             return null
         }
@@ -48,7 +46,7 @@ internal abstract class EntityFactory {
         if (entityNbt.containsByte("CustomNameVisible")) {
             nbt.putBoolean("CustomNameVisible", entityNbt.getBoolean("CustomNameVisible"))
         }
-        if (adjustNbt(remoteChunk, remoteEntity, nukkitId, chunk, entityNbt, nbt)) {
+        if (adjustNbt(remoteEntity, nukkitId, chunk, entityNbt, nbt)) {
             val entity = Entity.createEntity(nukkitId, chunk, nbt)
             if (entity == null) {
                 unknownEntities += nukkitId

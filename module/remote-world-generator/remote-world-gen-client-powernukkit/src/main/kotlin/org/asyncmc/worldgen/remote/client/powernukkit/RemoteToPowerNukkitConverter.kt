@@ -28,7 +28,6 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import org.asyncmc.worldgen.remote.client.powernukkit.entities.EntityFactory
 import org.asyncmc.worldgen.remote.data.RemoteBlockEntity
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
-import org.asyncmc.worldgen.remote.data.RemoteChunk
 import org.asyncmc.worldgen.remote.data.RemoteEntity
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.full.createInstance
@@ -176,7 +175,7 @@ internal object RemoteToPowerNukkitConverter {
         cy: Int,
         cz: Int,
         remoteBlockEntity: RemoteBlockEntity?,
-        remoteChunk: RemoteChunk,
+        remoteBlockState: RemoteBlockState?,
         nbt: CompoundTag = CompoundTag()
     ): BlockEntity? {
         val blockEntityType = blocksWithEntity[blockState.blockId] ?: return null
@@ -201,7 +200,7 @@ internal object RemoteToPowerNukkitConverter {
                 return blockEntity
             }
             try {
-                applyBlockEntityData(remoteChunk, remoteBlockEntity, blockEntity)
+                applyBlockEntityData(remoteBlockState, remoteBlockEntity, blockEntity)
             } catch (e: Exception) {
                 plugin.log.error(e) { "Error while applying block entity data for $blockState" }
             }
@@ -209,11 +208,7 @@ internal object RemoteToPowerNukkitConverter {
         }
     }
 
-    private fun applyBlockEntityData(remoteChunk: RemoteChunk, remoteBlockEntity: RemoteBlockEntity, entity: BlockEntity) {
-        val x = remoteBlockEntity.x
-        val y = remoteBlockEntity.y
-        val z = remoteBlockEntity.z
-        val remoteBlock = remoteChunk.blockLayers[0][(z and 0xF) or (x and 0xF shl 4) or ((y + remoteChunk.minY) shl 8)]
+    private fun applyBlockEntityData(remoteBlock: RemoteBlockState?, remoteBlockEntity: RemoteBlockEntity, entity: BlockEntity) {
         val entityNbt = remoteBlockEntity.nbt.deserializeForNukkit()
         if (entity is InventoryHolder && entityNbt.containsList("Items", Tag.TAG_Compound)) {
             val slotRemapping = allSlotRemappings[entity.saveId]
@@ -234,6 +229,7 @@ internal object RemoteToPowerNukkitConverter {
                 }
             }
             is BlockEntityBanner -> {
+                requireNotNull(remoteBlock)
                 val colorName = remoteBlock.id.substringAfter(':').replace("_banner", "").replace("_wall", "").uppercase()
                 val color = DyeColor.valueOf(colorName)
                 entity.color = color.dyeData
@@ -248,6 +244,7 @@ internal object RemoteToPowerNukkitConverter {
                 }
             }
             is BlockEntitySkull -> {
+                requireNotNull(remoteBlock)
                 entity.namedTag.putByte("SkullType", when (remoteBlock.id) {
                     "skeleton_skull", "skeleton_wall_skull" -> 0
                     "wither_skeleton_skull", "wither_skeleton_wall_skull" -> 1
@@ -259,19 +256,23 @@ internal object RemoteToPowerNukkitConverter {
                 })
             }
             is BlockEntityBed -> {
+                requireNotNull(remoteBlock)
                 val colorName = remoteBlock.id.substringAfter(':').substringBeforeLast("_bed")
                 val color = DyeColor.valueOf(colorName)
                 entity.color = color.dyeData
             }
             is BlockEntityMusic -> {
+                requireNotNull(remoteBlock)
                 entity.namedTag.putByte("note", remoteBlock.properties["note"]?.toIntOrNull() ?: 0)
             }
             is BlockEntityPistonArm -> {
+                requireNotNull(remoteBlock)
                 if (remoteBlock.id.startsWith("minecraft:sticky")) {
                     entity.sticky = true
                 }
             }
             is BlockEntityShulkerBox -> {
+                requireNotNull(remoteBlock)
                 val facing = remoteBlock.properties["facing"]?.uppercase()?.let { BlockFace.valueOf(it) }
                 if (facing != null) {
                     entity.namedTag.putByte("facing", facing.index)
@@ -308,7 +309,7 @@ internal object RemoteToPowerNukkitConverter {
                         val ticksInHive = beeTag.getInt("TicksInHive")
                         val ticksLeftToStay = maxOf(0, minOccupationTime - ticksInHive)
                         val remoteBeeData = beeTag.getCompound("EntityData")
-                        val bee = createNukkitEntity(remoteChunk, entity.chunk as BaseFullChunk,
+                        val bee = createNukkitEntity(entity.chunk as BaseFullChunk,
                             RemoteEntity(
                                 id = remoteBeeData.getString("id"),
                                 x = entity.x.toFloat(),
@@ -323,6 +324,7 @@ internal object RemoteToPowerNukkitConverter {
                 }
             }
             is BlockFlowerPot -> {
+                requireNotNull(remoteBlock)
                 val item: Item? = when (remoteBlock.id) {
                     "minecraft:potted_dandelion" -> MinecraftItemID.YELLOW_FLOWER.get(1)
                     "minecraft:potted_poppy" -> MinecraftItemID.RED_FLOWER.get(1)
@@ -362,9 +364,9 @@ internal object RemoteToPowerNukkitConverter {
         }
     }
 
-    fun createNukkitEntity(remoteChunk: RemoteChunk, chunk: BaseFullChunk, remoteEntity: RemoteEntity): Entity? {
+    fun createNukkitEntity(chunk: BaseFullChunk, remoteEntity: RemoteEntity): Entity? {
         val factory = entityFactories[remoteEntity.id] ?: return null
-        return factory.createEntity(remoteChunk, remoteEntity, chunk)
+        return factory.createEntity(remoteEntity, chunk)
     }
 
     fun convertItem(baseItem: CompoundTag): Item? {
