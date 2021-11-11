@@ -2,3 +2,14 @@ webserver:
   port: -1
   secret-appid: generate
   secret-token: generate
+  enable:
+    metrics: true
+    compression: true
+    CORS: true
+    call-logging: true
+  log:
+    success: false
+    locked: true # It's a normal phase of this webserver when a request is done but Minecraft didn't finish the chunk yet
+    others: true
+  CORS-hosts:
+    - *

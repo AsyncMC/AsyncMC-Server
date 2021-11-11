@@ -64,9 +64,13 @@ class AsyncMcPaperWorldGenServer: JavaPlugin() {
             configureSecurity(appId, token)
             configureRouting(plugin)
             configureSerialization()
-            configureMonitoring()
-            configureHTTP()
-            configureMicrometerMetrics()
+            if (config.getBoolean("webserver.enable.call-logging", true)) {
+                configureMonitoring(config)
+            }
+            configureHTTP(config)
+            if (config.getBoolean("webserver.enable.metrics", true)) {
+                configureMicrometerMetrics()
+            }
         }
         webServer = server
         server.start(wait = false)
