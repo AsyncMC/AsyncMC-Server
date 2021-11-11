@@ -17,8 +17,15 @@ internal class VillagerEntityFactory: GenericEntityFactory(EntityVillager.NETWOR
         //    // TODO persistingOffers
         //}
 
+        val villagerData = entityNbt.getCompound("VillagerData")
         nbt.putInt("TradeExperience", entityNbt.getInt("Xp"))
-        nbt.putInt("TradeTier", entityNbt.getCompound("VillagerData").getInt("level"))
+        nbt.putInt("TradeTier", villagerData.getInt("level"))
+        if (villagerData.containsString("profession")) {
+            nbt.putString("ProfessionV2Identifier", villagerData.getString("profession"))
+        }
+        if (villagerData.containsString("type")) {
+            nbt.putString("VillagerV2Type", villagerData.getString("type"))
+        }
         return super.adjustNbt(remoteEntity, nukkitId, chunk, entityNbt, nbt)
     }
 }

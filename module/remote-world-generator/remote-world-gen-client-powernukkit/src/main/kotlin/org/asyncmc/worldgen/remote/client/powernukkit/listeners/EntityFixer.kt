@@ -6,10 +6,14 @@ import cn.nukkit.entity.data.IntEntityData
 import cn.nukkit.entity.data.IntPositionEntityData
 import cn.nukkit.entity.mob.EntityShulker
 import cn.nukkit.entity.passive.EntityStrider
+import cn.nukkit.entity.passive.EntityVillager
+import cn.nukkit.entity.passive.EntityVillagerV1
 import cn.nukkit.event.EventHandler
 import cn.nukkit.event.EventPriority
 import cn.nukkit.event.Listener
 import cn.nukkit.event.entity.EntitySpawnEvent
+import cn.nukkit.event.player.PlayerInteractEntityEvent
+import cn.nukkit.item.ItemID
 import cn.nukkit.math.BlockFace
 import cn.nukkit.nbt.tag.IntTag
 import cn.nukkit.nbt.tag.ListTag
@@ -35,6 +39,25 @@ class EntityFixer: Listener {
             }
         }
     }*/
+
+    @EventHandler
+    internal fun onDebug(ev: PlayerInteractEntityEvent) {
+        val entity = ev.entity
+        if (!ev.entity.saveId.startsWith("Villager")) return
+        val player = ev.player
+        val item = ev.item?.id ?: return
+        if (item != ItemID.STICK && item != ItemID.WOODEN_HOE) return
+        var variant = entity.getDataPropertyInt(Entity.DATA_VARIANT)
+        var skinId = entity.getDataPropertyInt(Entity.DATA_SKIN_ID)
+        if (item == ItemID.STICK) {
+            variant += if (player.isSneaking) -1 else 1
+        } else {
+            skinId += if (player.isSneaking) -1 else 1
+        }
+        player.sendMessage("SkinId: $skinId Variant: $variant")
+        entity.setDataProperty(IntEntityData(Entity.DATA_SKIN_ID, skinId))
+        entity.setDataProperty(IntEntityData(Entity.DATA_VARIANT, variant))
+    }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     internal fun onEntitySpawn(ev: EntitySpawnEvent) {
@@ -73,6 +96,42 @@ class EntityFixer: Listener {
                             pos[1].data,
                             pos[2].data
                         ))
+                    }
+                }
+            }
+            else -> when (entity.networkId) {
+                EntityVillagerV1.NETWORK_ID -> {
+                    if (entity.namedTag.containsString("ProfessionV1Identifier")) {
+                        val variant = when (entity.namedTag.getString("ProfessionV1Identifier")) {
+                            "minecraft:librarian" -> 1
+                            "minecraft:cleric" -> 2
+                            "minecraft:blacksmith" -> 3
+                            "minecraft:butcher" -> 4
+                            else -> 0
+                        }
+                        entity.setDataProperty(IntEntityData(Entity.DATA_VARIANT, variant))
+                    }
+                }
+                EntityVillager.NETWORK_ID -> {
+                    if (entity.namedTag.containsString("ProfessionV2Identifier")) {
+                        val variant = when (entity.namedTag.getString("ProfessionV2Identifier")) {
+                            "minecraft:farmer" -> 1
+                            "minecraft:fisherman" -> 2
+                            "minecraft:shepherd" -> 3
+                            "minecraft:fletcher" -> 4
+                            "minecraft:librarian" -> 5
+                            "minecraft:cartographer" -> 6
+                            "minecraft:cleric" -> 7
+                            "minecraft:armorer" -> 8
+                            "minecraft:weaponsmith" -> 9
+                            "minecraft:toolsmith" -> 10
+                            "minecraft:butcher" -> 11
+                            "minecraft:leatherworker" -> 12
+                            "minecraft:mason" -> 13
+                            "minecraft:nitwit" -> 14
+                            else -> 0
+                        }
+                        entity.setDataProperty(IntEntityData(Entity.DATA_VARIANT, variant))
                     }
                 }
             }
