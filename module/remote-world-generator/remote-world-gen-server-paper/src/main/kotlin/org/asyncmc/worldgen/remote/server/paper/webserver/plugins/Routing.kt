@@ -1,6 +1,7 @@
 package org.asyncmc.worldgen.remote.server.paper.webserver.plugins
 
 import io.ktor.application.*
+import io.ktor.auth.*
 import io.ktor.http.*
 import io.ktor.response.*
 import io.ktor.routing.*
@@ -44,159 +45,161 @@ fun Application.configureRouting(plugin: AsyncMcPaperWorldGenServer) {
     Files.createDirectories(worldsFolder)
 
     routing {
-        post<PrepareWorldRequest>("/world/prepare") { request ->
-            val env = when (val id = request.dimension.id) {
-                "minecraft:overworld" -> World.Environment.NORMAL
-                "minecraft:the_nether" -> World.Environment.NETHER
-                "minecraft:the_end" -> World.Environment.THE_END
-                else -> throw UnsupportedOperationException("Dimension type $id is not supported")
-            }
-
-            val folder = worldsFolder.resolve("${env.name.lowercase()}_${request.seed}_structures-${request.generateStructures}")
-            worlds[folder.name]?.let {
-                call.respond(folder.name)
-                return@post
-            }
-
-            val worldName = worldContainer.relativize(folder).toString().replace('\\', '/')
-            val worldCreator = WorldCreator.ofNameAndKey(
-                worldName,
-                NamespacedKey(plugin, folder.name)
-            )
-
-            worldCreator.environment(env)
-
-            worldCreator.seed(request.seed)
-            worldCreator.generateStructures(request.generateStructures)
-
-            val captureWorldCreation = object : Listener {
-                @EventHandler(ignoreCancelled = false, priority = EventPriority.LOWEST)
-                fun onInitWorld(ev: WorldInitEvent) {
-                    val world = ev.world
-                    if (world.name == worldName) {
-                        world.keepSpawnInMemory = false
-                        world.difficulty = Difficulty.NORMAL
-                        HandlerList.unregisterAll(this)
-                    }
+        authenticate("clientMinecraftServer") {
+            post<PrepareWorldRequest>("/world/prepare") { request ->
+                val env = when (val id = request.dimension.id) {
+                    "minecraft:overworld" -> World.Environment.NORMAL
+                    "minecraft:the_nether" -> World.Environment.NETHER
+                    "minecraft:the_end" -> World.Environment.THE_END
+                    else -> throw UnsupportedOperationException("Dimension type $id is not supported")
                 }
-            }
 
-            server.pluginManager.registerEvents(captureWorldCreation, plugin)
-
-            val world = callSync(plugin) {
-                checkNotNull(worldCreator.createWorld())
-            }
-
-            worlds[folder.name] = world
-
-            call.respond(folder.name)
-        }
-
-        get("/world/release/{worldId}") {
-            val worldId = call.parameters["worldId"]
-            val current = worlds[worldId] ?: return@get
-            callSync(plugin) {
-                server.unloadWorld(current, true)
-            }
-        }
-
-        post<RequestEntities>("/entities/list/{worldId}/{x}/{z}") { requestedData ->
-            val request = chunkCoordinates()
-            val world = worlds[request.worldId]
-            if (world == null) {
-                call.response.status(HttpStatusCode.NotFound)
-                return@post
-            }
-
-            // Extensively attempt to load the entities D:
-            val captured = EntityCaptureListener[request.x, request.z]
-                ?: world.getChunkAtAsync(request.x, request.z, true, true).thenApply { chunk ->
-                    chunk.entities.asList().takeIf { chunk.isEntitiesLoaded }
-                }.await()
-                ?: EntityCaptureListener[request.x, request.z]
-                ?: world.getChunkAtAsync(request.x, request.z, true, true).thenApply { chunk ->
-                    chunk.entities.asList().takeIf { chunk.isEntitiesLoaded }
-                }.await()
-                ?: EntityCaptureListener[request.x, request.z]
-                ?: callSync(plugin) {
-                    val chunk = world.getChunkAt(request.x, request.z)
-                    chunk.entities.asList().takeIf { chunk.isEntitiesLoaded }.also {
-                        if (it == null) {
-                            chunk.unload()
-                        }
-                    }
-                } ?: EntityCaptureListener[request.x, request.z]
-                ?: world.getChunkAtAsync(request.x, request.z, true, true).thenApply { chunk ->
-                    chunk.entities.asList().takeIf { chunk.isEntitiesLoaded }
-                }.await()
-                ?: EntityCaptureListener[request.x, request.z]
-
-            if (captured == null) {
-                plugin.logger.fine { "Entities not captured at x:${request.x} z:${request.z}" }
-                call.response.status(HttpStatusCode.Locked)
-                return@post
-            }
-
-            server.scheduler.runTaskLater(plugin, Runnable {
-                world.unloadChunk(request.x, request.z)
-            }, 20)
-
-            val remoteEntities = if (requestedData.isNotFiltered) {
-                captured.map {
-                    ChunkConverter.convertEntity(it)
+                val folder = worldsFolder.resolve("${env.name.lowercase()}_${request.seed}_structures-${request.generateStructures}")
+                worlds[folder.name]?.let {
+                    call.respond(folder.name)
+                    return@post
                 }
-            } else {
-                var filtered = captured.asSequence()
-                if (!requestedData.monsters) {
-                    filtered = filtered.filterNot { it is Monster }
-                }
-                if (!requestedData.animals) {
-                    filtered = filtered.filterNot { it is Animals }
-                }
-                if (!requestedData.structureEntities) {
-                    filtered = filtered.filterNot { it is Hanging }
-                }
-                if (!requestedData.otherEntities) {
-                    filtered = filtered.filter {
-                        when (it) {
-                            is Monster, is Animals, is Hanging -> true
-                            else -> false
-                        }
-                    }
-                }
-                filtered.map {
-                    ChunkConverter.convertEntity(it)
-                }.toList()
-            }
-            call.respond(remoteEntities)
-        }
 
-        post<RequestedChunkData>("/chunk/create/{worldId}/{x}/{z}") { requestedData ->
-            val request = chunkCoordinates()
-            val world = worlds[request.worldId]
-            if (world == null) {
-                call.response.status(HttpStatusCode.NotFound)
-                return@post
-            }
-
-            val remoteChunk = world.getChunkAtAsync(request.x, request.z, true, true).thenApply { chunk ->
-                ChunkConverter.convert(
-                    plugin = plugin,
-                    chunk = chunk,
-                    requestedData,
+                val worldName = worldContainer.relativize(folder).toString().replace('\\', '/')
+                val worldCreator = WorldCreator.ofNameAndKey(
+                    worldName,
+                    NamespacedKey(plugin, folder.name)
                 )
-            }.await()
 
-            if (remoteChunk == null) {
-                call.response.status(HttpStatusCode.Locked)
-                return@post
+                worldCreator.environment(env)
+
+                worldCreator.seed(request.seed)
+                worldCreator.generateStructures(request.generateStructures)
+
+                val captureWorldCreation = object : Listener {
+                    @EventHandler(ignoreCancelled = false, priority = EventPriority.LOWEST)
+                    fun onInitWorld(ev: WorldInitEvent) {
+                        val world = ev.world
+                        if (world.name == worldName) {
+                            world.keepSpawnInMemory = false
+                            world.difficulty = Difficulty.NORMAL
+                            HandlerList.unregisterAll(this)
+                        }
+                    }
+                }
+
+                server.pluginManager.registerEvents(captureWorldCreation, plugin)
+
+                val world = callSync(plugin) {
+                    checkNotNull(worldCreator.createWorld())
+                }
+
+                worlds[folder.name] = world
+
+                call.respond(folder.name)
             }
 
-            server.scheduler.runTaskLater(plugin, Runnable {
-                world.unloadChunk(request.x, request.z)
-            }, 20)
+            get("/world/release/{worldId}") {
+                val worldId = call.parameters["worldId"]
+                val current = worlds[worldId] ?: return@get
+                callSync(plugin) {
+                    server.unloadWorld(current, true)
+                }
+            }
 
-            call.respond(remoteChunk)
+            post<RequestEntities>("/entities/list/{worldId}/{x}/{z}") { requestedData ->
+                val request = chunkCoordinates()
+                val world = worlds[request.worldId]
+                if (world == null) {
+                    call.response.status(HttpStatusCode.NotFound)
+                    return@post
+                }
+
+                // Extensively attempt to load the entities D:
+                val captured = EntityCaptureListener[request.x, request.z]
+                    ?: world.getChunkAtAsync(request.x, request.z, true, true).thenApply { chunk ->
+                        chunk.entities.asList().takeIf { chunk.isEntitiesLoaded }
+                    }.await()
+                    ?: EntityCaptureListener[request.x, request.z]
+                    ?: world.getChunkAtAsync(request.x, request.z, true, true).thenApply { chunk ->
+                        chunk.entities.asList().takeIf { chunk.isEntitiesLoaded }
+                    }.await()
+                    ?: EntityCaptureListener[request.x, request.z]
+                    ?: callSync(plugin) {
+                        val chunk = world.getChunkAt(request.x, request.z)
+                        chunk.entities.asList().takeIf { chunk.isEntitiesLoaded }.also {
+                            if (it == null) {
+                                chunk.unload()
+                            }
+                        }
+                    } ?: EntityCaptureListener[request.x, request.z]
+                    ?: world.getChunkAtAsync(request.x, request.z, true, true).thenApply { chunk ->
+                        chunk.entities.asList().takeIf { chunk.isEntitiesLoaded }
+                    }.await()
+                    ?: EntityCaptureListener[request.x, request.z]
+
+                if (captured == null) {
+                    plugin.logger.fine { "Entities not captured at x:${request.x} z:${request.z}" }
+                    call.response.status(HttpStatusCode.Locked)
+                    return@post
+                }
+
+                server.scheduler.runTaskLater(plugin, Runnable {
+                    world.unloadChunk(request.x, request.z)
+                }, 20)
+
+                val remoteEntities = if (requestedData.isNotFiltered) {
+                    captured.map {
+                        ChunkConverter.convertEntity(it)
+                    }
+                } else {
+                    var filtered = captured.asSequence()
+                    if (!requestedData.monsters) {
+                        filtered = filtered.filterNot { it is Monster }
+                    }
+                    if (!requestedData.animals) {
+                        filtered = filtered.filterNot { it is Animals }
+                    }
+                    if (!requestedData.structureEntities) {
+                        filtered = filtered.filterNot { it is Hanging }
+                    }
+                    if (!requestedData.otherEntities) {
+                        filtered = filtered.filter {
+                            when (it) {
+                                is Monster, is Animals, is Hanging -> true
+                                else -> false
+                            }
+                        }
+                    }
+                    filtered.map {
+                        ChunkConverter.convertEntity(it)
+                    }.toList()
+                }
+                call.respond(remoteEntities)
+            }
+
+            post<RequestedChunkData>("/chunk/create/{worldId}/{x}/{z}") { requestedData ->
+                val request = chunkCoordinates()
+                val world = worlds[request.worldId]
+                if (world == null) {
+                    call.response.status(HttpStatusCode.NotFound)
+                    return@post
+                }
+
+                val remoteChunk = world.getChunkAtAsync(request.x, request.z, true, true).thenApply { chunk ->
+                    ChunkConverter.convert(
+                        plugin = plugin,
+                        chunk = chunk,
+                        requestedData,
+                    )
+                }.await()
+
+                if (remoteChunk == null) {
+                    call.response.status(HttpStatusCode.Locked)
+                    return@post
+                }
+
+                server.scheduler.runTaskLater(plugin, Runnable {
+                    world.unloadChunk(request.x, request.z)
+                }, 20)
+
+                call.respond(remoteChunk)
+            }
         }
     }
 }

@@ -2,43 +2,17 @@ package org.asyncmc.worldgen.remote.server.paper.webserver.plugins
 
 import io.ktor.application.*
 import io.ktor.auth.*
-import io.ktor.response.*
-import io.ktor.routing.*
 
-fun Application.configureSecurity() {
-
+fun Application.configureSecurity(appId: String, token: String) {
     authentication {
-        basic(name = "myauth1") {
-            realm = "Ktor Server"
+        basic(name = "clientMinecraftServer") {
+            realm = "Remote World Generator"
             validate { credentials ->
-                if (credentials.name == credentials.password) {
+                if (credentials.name == appId && credentials.password == token) {
                     UserIdPrincipal(credentials.name)
                 } else {
                     null
                 }
-            }
-        }
-
-        form(name = "myauth2") {
-            userParamName = "user"
-            passwordParamName = "password"
-            challenge {
-                /**/
-            }
-        }
-    }
-
-    routing {
-        authenticate("myauth1") {
-            get("/protected/route/basic") {
-                val principal = call.principal<UserIdPrincipal>()!!
-                call.respondText("Hello ${principal.name}")
-            }
-        }
-        authenticate("myauth1") {
-            get("/protected/route/form") {
-                val principal = call.principal<UserIdPrincipal>()!!
-                call.respondText("Hello ${principal.name}")
             }
         }
     }

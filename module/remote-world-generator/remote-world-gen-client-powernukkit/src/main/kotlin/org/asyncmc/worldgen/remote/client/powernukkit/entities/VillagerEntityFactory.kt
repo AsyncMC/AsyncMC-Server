@@ -25,7 +25,7 @@ internal class VillagerEntityFactory: GenericEntityFactory(EntityVillager.NETWOR
             nbt.putString("ProfessionV2Identifier", villagerData.getString("profession"))
         }
         if (nbt.getString("ProfessionV2Identifier").takeUnless { it.isBlank() || it == "minecraft:none" } == null
-            && plugin.config.getBoolean("randomize-villager-professions", true)
+            && plugin.config.getBoolean("worldgen.randomize-villager-professions", true)
         ) {
             nbt.putString("ProfessionV2Identifier", villagerProfessions.keys.random())
         }

@@ -10,8 +10,11 @@ import cn.nukkit.item.Item
 import cn.nukkit.level.biome.Biome
 import cn.nukkit.level.biome.EnumBiome
 import cn.nukkit.level.generator.Generator
+import cn.nukkit.scheduler.Task
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.features.auth.*
+import io.ktor.client.features.auth.providers.*
 import io.ktor.http.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
@@ -26,6 +29,7 @@ import org.asyncmc.worldgen.remote.client.powernukkit.entities.*
 import org.asyncmc.worldgen.remote.client.powernukkit.listeners.EntityFixer
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
 import org.powernukkit.plugins.kotlin.KotlinPluginBase
+import org.powernukkit.plugins.kotlin.fatal
 import java.io.FileNotFoundException
 import java.io.InputStream
 
@@ -36,6 +40,28 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
     lateinit var httpClient: HttpClient
 
     override fun onEnable() {
+        try {
+            throwingEnable()
+        } catch (e: Throwable) {
+            try {
+                log.fatal(e) {
+                    "An error has occurred while enabling the async world generator plugin and the server loading cannot proceed safely!"
+                }
+            } finally {
+                try {
+                    server.pluginManager.disablePlugin(this)
+                } finally {
+                    server.scheduler.scheduleTask(object : Task() {
+                        override fun onRun(currentTick: Int) {
+                            server.shutdown()
+                        }
+                    })
+                }
+            }
+        }
+    }
+
+    private fun throwingEnable() {
         saveDefaultConfig()
         reloadConfig()
         registerBiomes()
@@ -45,10 +71,40 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             BlockEntity.registerBlockEntity(BlockEntity.MOB_SPAWNER, BlockEntityMobSpawner::class.java)
         }
 
-        backend = Url(requireNotNull(config.getString("default-backend")) {
-            "No default world backend was defined, the AsyncMc Remote World Generation plugin cannot continue."
-        })
-        httpClient = HttpClient(CIO)
+        backend = try {
+            Url(config.getString("backend.url", "").also {
+                require(it.isNotBlank()) {
+                    "No default world backend was defined, the AsyncMc Remote World Generation plugin cannot continue. " +
+                            "Please provide the backend information in the AsyncMcRemoteWorldGenClient/config.yml file"
+                }
+            })
+        } catch (e: Exception) {
+            log.error(e) {
+                "Invalid URL providded at AsyncMcRemoteWorldGenClient/config.yml -> backend.url"
+            }
+            throw e
+        }
+
+        httpClient = HttpClient(CIO) {
+            install(Auth) {
+                basic {
+                    credentials {
+                        BasicAuthCredentials(
+                            username = config.getString("backend.secret-security-appid", "paste-it-here").also {
+                                require(it != "paste-it-here") {
+                                    "Please provide the backend information in the AsyncMcRemoteWorldGenClient/config.yml file."
+                                }
+                            },
+                            password = config.getString("backend.secret-security-token").also {
+                                require(it != "paste-it-here") {
+                                    "Please provide the backend information in the AsyncMcRemoteWorldGenClient/config.yml file."
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
 
         RemoteToPowerNukkitConverter.detectBlockStatesWithEntity()
         loadEnchantmentMappings()

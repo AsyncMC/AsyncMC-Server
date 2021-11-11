@@ -33,7 +33,7 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
 
     @OptIn(ExperimentalSerializationApi::class)
     private val cachedSettings = ProtoBuf.Default.encodeToByteArray(RequestedChunkData(
-        openedTreasures = plugin.config.getBoolean("open-treasures", true),
+        openedTreasures = plugin.config.getBoolean("worldgen.open-treasures", true),
     ))
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -58,7 +58,7 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
             },
             seed = chunkProvider.seed,
             generateStructures = options.getOrDefault("generate-structures",
-                plugin.config.getBoolean("generate-structures", true)
+                plugin.config.getBoolean("worldgen.generate-structures", true)
             ).toString().toBoolean()
         )
     }

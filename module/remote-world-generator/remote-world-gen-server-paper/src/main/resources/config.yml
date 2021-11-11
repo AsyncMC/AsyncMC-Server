@@ -1,2 +1,4 @@
 webserver:
   port: -1
+  secret-appid: generate
+  secret-token: generate

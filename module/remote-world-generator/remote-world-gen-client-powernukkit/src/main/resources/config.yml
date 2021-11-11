@@ -1,7 +1,11 @@
-default-backend: http://localhost:25566
-open-treasures: true
-generate-structures: true
-randomize-villager-professions: true
+backend:
+  url: http://localhost:25566
+  secret-security-appid: paste-it-here
+  secret-security-token: paste-it-here
+worldgen:
+  open-treasures: true
+  generate-structures: true
+  randomize-villager-professions: true
 disable:
   all-entities: false
   monsters: false
