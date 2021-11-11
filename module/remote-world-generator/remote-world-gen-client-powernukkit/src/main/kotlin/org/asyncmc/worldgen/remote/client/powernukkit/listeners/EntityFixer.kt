@@ -18,6 +18,7 @@ import cn.nukkit.math.BlockFace
 import cn.nukkit.nbt.tag.IntTag
 import cn.nukkit.nbt.tag.ListTag
 import cn.nukkit.nbt.tag.Tag
+import org.asyncmc.worldgen.remote.client.powernukkit.entities.VillagerEntityFactory
 
 class EntityFixer: Listener {
     /*@EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
@@ -114,23 +115,8 @@ class EntityFixer: Listener {
                 }
                 EntityVillager.NETWORK_ID -> {
                     if (entity.namedTag.containsString("ProfessionV2Identifier")) {
-                        val variant = when (entity.namedTag.getString("ProfessionV2Identifier")) {
-                            "minecraft:farmer" -> 1
-                            "minecraft:fisherman" -> 2
-                            "minecraft:shepherd" -> 3
-                            "minecraft:fletcher" -> 4
-                            "minecraft:librarian" -> 5
-                            "minecraft:cartographer" -> 6
-                            "minecraft:cleric" -> 7
-                            "minecraft:armorer" -> 8
-                            "minecraft:weaponsmith" -> 9
-                            "minecraft:toolsmith" -> 10
-                            "minecraft:butcher" -> 11
-                            "minecraft:leatherworker" -> 12
-                            "minecraft:mason" -> 13
-                            "minecraft:nitwit" -> 14
-                            else -> 0
-                        }
+                        val variant = VillagerEntityFactory.villagerProfessions
+                            .getOrDefault(entity.namedTag.getString("ProfessionV2Identifier"), 0)
                         entity.setDataProperty(IntEntityData(Entity.DATA_VARIANT, variant))
                     }
                 }

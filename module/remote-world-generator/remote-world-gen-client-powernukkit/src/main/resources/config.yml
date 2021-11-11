@@ -1,1 +1,10 @@
 default-backend: http://localhost:25566
+open-treasures: true
+generate-structures: true
+randomize-villager-professions: true
+disable:
+  all-entities: false
+  monsters: false
+  animals: false
+  structure-entities: false
+  other-entities: false

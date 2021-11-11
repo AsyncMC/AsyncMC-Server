@@ -33,11 +33,16 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
 
     @OptIn(ExperimentalSerializationApi::class)
     private val cachedSettings = ProtoBuf.Default.encodeToByteArray(RequestedChunkData(
-        openedTreasures = true,
+        openedTreasures = plugin.config.getBoolean("open-treasures", true),
     ))
 
     @OptIn(ExperimentalSerializationApi::class)
-    private val requestEntities = ProtoBuf.Default.encodeToByteArray(RequestEntities())
+    private val requestEntities = ProtoBuf.Default.encodeToByteArray(RequestEntities(
+        monsters = plugin.config.getSection("disable").let { !it.getBoolean("all-entities", false) && !it.getBoolean("monsters", false) },
+        animals = plugin.config.getSection("disable").let { !it.getBoolean("all-entities", false) && !it.getBoolean("animals", false) },
+        structureEntities = plugin.config.getSection("disable").let { !it.getBoolean("all-entities", false) && !it.getBoolean("structure-entities", false) },
+        otherEntities = plugin.config.getSection("disable").let { !it.getBoolean("all-entities", false) && !it.getBoolean("other-entities", false) },
+    ))
 
     protected abstract val fallbackBiome: UByte
 
@@ -45,14 +50,16 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
 
     protected open fun createWorldPrepareRequest(): PrepareWorldRequest {
         return PrepareWorldRequest(
-            when (dimension) {
+            dimension = when (dimension) {
                 Level.DIMENSION_OVERWORLD -> MinecraftDimension.DIMENSION_OVERWORLD
                 Level.DIMENSION_NETHER -> MinecraftDimension.DIMENSION_THE_NETHER
                 Level.DIMENSION_THE_END -> MinecraftDimension.DIMENSION_THE_END
                 else -> error("Unsupported dimension $dimension")
             },
-            chunkProvider.seed,
-            options.getOrDefault("generate-structures", true).toString().toBoolean()
+            seed = chunkProvider.seed,
+            generateStructures = options.getOrDefault("generate-structures",
+                plugin.config.getBoolean("generate-structures", true)
+            ).toString().toBoolean()
         )
     }
 
