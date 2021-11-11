@@ -5,6 +5,7 @@ import cn.nukkit.entity.data.ByteEntityData
 import cn.nukkit.entity.data.IntEntityData
 import cn.nukkit.entity.data.IntPositionEntityData
 import cn.nukkit.entity.mob.EntityShulker
+import cn.nukkit.entity.passive.EntityCat
 import cn.nukkit.entity.passive.EntityStrider
 import cn.nukkit.entity.passive.EntityVillager
 import cn.nukkit.entity.passive.EntityVillagerV1
@@ -118,6 +119,11 @@ class EntityFixer: Listener {
                         val variant = VillagerEntityFactory.villagerProfessions
                             .getOrDefault(entity.namedTag.getString("ProfessionV2Identifier"), 0)
                         entity.setDataProperty(IntEntityData(Entity.DATA_VARIANT, variant))
+                    }
+                }
+                EntityCat.NETWORK_ID -> {
+                    if (entity.namedTag.containsByte("CatType")) {
+                        entity.setDataProperty(IntEntityData(Entity.DATA_VARIANT, entity.namedTag.getByte("CatType")))
                     }
                 }
             }
