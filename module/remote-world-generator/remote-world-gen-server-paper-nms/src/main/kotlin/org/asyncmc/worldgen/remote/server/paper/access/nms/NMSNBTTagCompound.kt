@@ -7,7 +7,15 @@ import net.minecraft.nbt.NBTTagCompound
 value class NMSNBTTagCompound(override val nms: NBTTagCompound): NMSWrapper<NBTTagCompound> {
     constructor(): this(NBTTagCompound())
 
-    operator fun set(key: String, value: NMSNBTTagList) {
+    inline operator fun set(key: String, value: NMSNBTTagList) {
         nms[key] = value.nms
+    }
+
+    inline fun getInt(key: String): Int {
+        return nms.getInt(key)
+    }
+
+    inline fun getString(key: String): String {
+        return nms.getString(key)
     }
 }

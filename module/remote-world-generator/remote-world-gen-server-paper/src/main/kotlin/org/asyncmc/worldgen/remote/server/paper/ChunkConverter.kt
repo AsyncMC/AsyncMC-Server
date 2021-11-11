@@ -78,10 +78,7 @@ object ChunkConverter {
             if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, blockLightProvider),
             //if (includeLightMaps) TODO() else null, //RemoteLightMap(intArrayOf()),//convertLightMap(chunk, skyLightProvider),
             if (includeHeightMaps) convertHeightMaps(chunkNms) else null,
-            convertBlockTickSchedule(chunkNms.blockTickScheduler),
-            convertFluidTickSchedule(chunkNms.fluidTickScheduler),
-            //emptyList(),
-            //emptyList(),
+            if (requestedChunkData.blockStates) convertPendingTicks(chunkNms) else null,
             if (!includeStructures) null else
                 NbtFile("asyncmc:structures", OurNbtCompound().also { structures ->
                     structures["START"] = OurNbtCompound(chunkNms.structureStarts.entries.map { (feature, start) ->
@@ -107,19 +104,54 @@ object ChunkConverter {
         )
     }
 
-    private fun convertFluidTickSchedule(tickScheduler: NMSTickList<*>): SerializedNbtFile {
-        return convertTickSchedule(tickScheduler)
+    private fun convertPendingTicks(chunkNms: NMSChunk): RemotePendingTickLists {
+        return RemotePendingTickLists(
+            convertPendingTickSchedule(chunkNms, chunkNms.blockTickScheduler),
+            convertPendingTickSchedule(chunkNms, chunkNms.fluidTickScheduler),
+        )
     }
 
-    private fun convertBlockTickSchedule(tickScheduler: NMSTickList<*>): SerializedNbtFile {
-        return convertTickSchedule(tickScheduler)
+    private fun convertPendingTickSchedule(chunkNms: NMSChunk, tickScheduler: NMSTickList<*>): List<RemotePendingTick> {
+        val nbtList = tickScheduler.toNbt()
+        return nbtList.mapIndexed { index, tag ->
+            val compound = tag.asNBTCompound
+            if (compound != null) {
+                listOf(convertScheduledTick(compound))
+            } else {
+                tag.asNBTList?.let { convertProtoScheduledTick(chunkNms, it, index) } ?: emptyList()
+            }
+        }.flatten()
     }
 
-    private fun convertTickSchedule(tickScheduler: NMSTickList<*>): SerializedNbtFile {
-        val nbt = tickScheduler.toNbt()
-        val compound = NMSNBTTagCompound()
-        compound["tickScheduler"] = nbt
-        return compound.toSerializedNbtFile()
+    private fun convertProtoScheduledTick(chunkNms: NMSChunk, nbt: NMSNBTTagList, chunkSectionIndex: Int): List<RemotePendingTick> {
+        return nbt.mapIndexed { _, nbtBlockPos ->
+            val yOffset = chunkNms.minBuildHeight + chunkSectionIndex * 16
+            nbtBlockPos.asNBTShort?.value?.toInt()?.let {
+                val cx = it and 0xF
+                val sy = it shr 4 and 0xF
+                val cz = it shr 8 and 0xF
+                val id = chunkNms.sections[chunkSectionIndex]?.getBlockState(cx, sy, cz)?.block?.let(blockRegistry::getId)
+                RemotePendingTick(
+                    x = cx,
+                    y = yOffset + sy,
+                    z = cz,
+                    ticks = 20,
+                    priority = 0,
+                    blockId = id?.toString()
+                )
+            }
+        }.filterNotNull()
+    }
+
+    private fun convertScheduledTick(nbt: NMSNBTTagCompound): RemotePendingTick {
+        return RemotePendingTick(
+            x = nbt.getInt("x"),
+            y = nbt.getInt("y"),
+            z = nbt.getInt("z"),
+            ticks = -nbt.getInt("t"),
+            priority = nbt.getInt("p"),
+            blockId = nbt.getString("i")
+        )
     }
 
     private fun convertBlockPalette(chunk: NMSChunk, blockRegistry: NMSIRegistry<*, NMSBlock>, expectedTiles: MutableSet<NMSBlockPos>): List<RemotePaletteBlockStates> {

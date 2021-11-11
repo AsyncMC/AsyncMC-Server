@@ -13,9 +13,6 @@ public data class RemoteChunk(
     val biomeMap: RemotePalettedBiomeMap,
     val lightMaps: RemoteLightMaps?,
     val heightMaps: RemoteHeightMaps?,
-    val blocksPendingTick: SerializedNbtFile,
-    val liquidPendingTick: SerializedNbtFile,
-    //val blocksPendingUpdate: List<BlockPosInsideChunk>,
-    //val liquidPendingUpdate: List<BlockPosInsideChunk>,
+    val pendingTicks: RemotePendingTickLists?,
     val structures: SerializedNbtFile?,
 )

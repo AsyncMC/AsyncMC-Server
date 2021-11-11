@@ -1,5 +1,6 @@
 package org.asyncmc.worldgen.remote.client.powernukkit
 
+import cn.nukkit.block.BlockID
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.level.ChunkManager
 import cn.nukkit.level.Level
@@ -137,6 +138,56 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         }
         remoteChunk.blockEntities.associateBy { BlockVector3(it.x, it.y, it.z) }
         setBlockStates(remoteChunk, chunk, blockEntities)
+        scheduleUpdates(remoteChunk, chunk)
+    }
+
+    private fun scheduleUpdates(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {
+        val level = chunk.provider.level ?: return // Can't schedule update if we don't have a level
+        val pendingTickLists = remoteChunk.pendingTicks ?: return
+        sequenceOf(pendingTickLists.blocks, pendingTickLists.liquid).flatten().forEach { remotePendingTick ->
+            var blockState = chunk.getBlockStateAt(remotePendingTick.x, remotePendingTick.y, remotePendingTick.z)
+            var layer = 0
+            remotePendingTick.blockId?.also { idCheck ->
+                if (!(checkIdForPendingChunk(idCheck, blockState) ?: return@also)) {
+                    blockState = chunk.getBlockStateAt(remotePendingTick.x, remotePendingTick.y, remotePendingTick.z, 1)
+                    layer = 1
+                    if (!(checkIdForPendingChunk(idCheck, blockState) ?: return@also)) {
+                        return@forEach
+                    }
+                }
+            }
+
+            if (blockState.blockId == BlockID.STILL_LAVA) {
+                blockState = blockState.withBlockId(BlockID.LAVA)
+                chunk.setBlockStateAt(remotePendingTick.x, remotePendingTick.y, remotePendingTick.z, layer, blockState)
+            } else if (blockState.blockId == BlockID.STILL_WATER) {
+                blockState = blockState.withBlockId(BlockID.WATER)
+                chunk.setBlockStateAt(remotePendingTick.x, remotePendingTick.y, remotePendingTick.z, layer, blockState)
+            }
+
+            val block = blockState.getBlock(level,
+                (chunk.x shl 4) + remotePendingTick.x,
+                remotePendingTick.y,
+                (chunk.z shl 4) + remotePendingTick.z,
+                layer,
+                true
+            )
+
+            level.scheduleUpdate(block, block, remotePendingTick.ticks, remotePendingTick.priority, false)
+        }
+    }
+
+    private fun checkIdForPendingChunk(remoteId: String, blockState: BlockState): Boolean? {
+        val validIds = when (remoteId) {
+            "minecraft:lava" -> listOf(BlockID.LAVA, BlockID.STILL_LAVA)
+            "minecraft:water" -> listOf(BlockID.WATER, BlockID.STILL_WATER)
+            else -> return null
+        }
+        if (blockState.blockId !in validIds) {
+            return false
+        }
+
+        return true
     }
 
     @OptIn(ExperimentalPowerNukkitKotlinApi::class)
