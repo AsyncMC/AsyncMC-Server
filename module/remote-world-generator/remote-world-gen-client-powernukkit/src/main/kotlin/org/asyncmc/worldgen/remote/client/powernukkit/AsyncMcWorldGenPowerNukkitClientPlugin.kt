@@ -79,6 +79,7 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
             "villager" to VillagerEntityFactory(),
             "sheep" to SheepEntityFactory(),
             "cat" to CatEntityFactory(),
+            "panda" to PandaEntityFactory(),
         ).associate { (id, factory) -> "minecraft:$id" to factory }
             .also { RemoteToPowerNukkitConverter.addEntityFactories(it) }
 
