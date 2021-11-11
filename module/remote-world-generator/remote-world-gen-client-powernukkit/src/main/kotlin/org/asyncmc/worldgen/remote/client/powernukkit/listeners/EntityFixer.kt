@@ -5,10 +5,7 @@ import cn.nukkit.entity.data.ByteEntityData
 import cn.nukkit.entity.data.IntEntityData
 import cn.nukkit.entity.data.IntPositionEntityData
 import cn.nukkit.entity.mob.EntityShulker
-import cn.nukkit.entity.passive.EntityCat
-import cn.nukkit.entity.passive.EntityStrider
-import cn.nukkit.entity.passive.EntityVillager
-import cn.nukkit.entity.passive.EntityVillagerV1
+import cn.nukkit.entity.passive.*
 import cn.nukkit.event.EventHandler
 import cn.nukkit.event.EventPriority
 import cn.nukkit.event.Listener
@@ -124,6 +121,11 @@ class EntityFixer: Listener {
                 EntityCat.NETWORK_ID -> {
                     if (entity.namedTag.containsByte("CatType")) {
                         entity.setDataProperty(IntEntityData(Entity.DATA_VARIANT, entity.namedTag.getByte("CatType")))
+                    }
+                }
+                EntityParrot.NETWORK_ID -> {
+                    if (entity.namedTag.containsInt("Variant")) {
+                        entity.setDataProperty(IntEntityData(Entity.DATA_VARIANT, entity.namedTag.getInt("Variant")))
                     }
                 }
             }
