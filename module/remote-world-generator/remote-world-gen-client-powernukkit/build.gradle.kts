@@ -11,17 +11,18 @@ repositories {
     maven(url = "https://oss.sonatype.org/content/repositories/snapshots")
 }
 
+val included by configurations.creating
+val worldGenDataVersion = "0.1.0-SNAPSHOT"
+
 dependencies {
     implementation("org.powernukkit:powernukkit:1.5.2.0-PN-SNAPSHOT")
-    implementation("org.powernukkit.plugins:kotlin-plugin-lib:1.5.31+0.1.0+2021.10.6-SNAPSHOT")
-    implementation("org.asyncmc:remote-world-gen-data:0.1.0-SNAPSHOT")
-    implementation("io.ktor:ktor-server-core:$ktorVersion")
-    implementation("io.ktor:ktor-serialization:$ktorVersion")
-    implementation("io.ktor:ktor-auth:$ktorVersion")
-    implementation("io.ktor:ktor-server-cio:$ktorVersion")
-    implementation("io.ktor:ktor-client-auth:$ktorVersion")
-    implementation("io.ktor:ktor-metrics-micrometer:$ktorVersion")
-    implementation("io.micrometer:micrometer-registry-prometheus:1.7.1")
+    implementation("org.powernukkit.plugins:kotlin-plugin-lib:1.5.31+0.1.0+2021.11.13-SNAPSHOT")
+    implementation("org.asyncmc:remote-world-gen-data:$worldGenDataVersion")
+    included("org.asyncmc:remote-world-gen-data:$worldGenDataVersion") {
+        exclude(group = "org.jetbrains.kotlin")
+        exclude(group = "org.jetbrains.kotlinx")
+        exclude(group = "org.jetbrains")
+    }
 }
 
 tasks {
@@ -29,6 +30,7 @@ tasks {
         finalizedBy(shadowJar)
     }
     shadowJar {
+        configurations = listOf(included)
         minimize()
     }
 

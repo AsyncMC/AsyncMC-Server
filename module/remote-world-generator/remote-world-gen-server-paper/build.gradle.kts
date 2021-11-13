@@ -1,11 +1,3 @@
-/*buildscript {
-    repositories {
-        mavenCentral()
-    }
-    dependencies {
-        classpath("com.guardsquare:proguard-gradle:7.1.0")
-    }
-}*/
 plugins {
     kotlin("jvm")
     id("com.github.johnrengelman.shadow") version "7.1.0"
@@ -37,22 +29,10 @@ dependencies {
 }
 
 tasks {
-    /*val proguard = create<proguard.gradle.ProGuardTask>("proguard") {
-        dependsOn(shadowJar)
-        group = "build"
-        doFirst {
-            val shadowIn = shadowJar.get().archiveFile.get()
-            injars(shadowIn)
-            outjars(shadowIn.asFile.resolveSibling(shadowIn.asFile.nameWithoutExtension + "-reduced.jar"))
-            dontobfuscate()
-            keep("public class org.asyncmc.worldgen_server.paper.AsyncMcPaperWorldGenServer")
-        }
-    }*/
     build {
         finalizedBy(shadowJar)
     }
     shadowJar {
-        //finalizedBy(proguard)
         minimize()
     }
     create<Copy>("devPlugin") {
