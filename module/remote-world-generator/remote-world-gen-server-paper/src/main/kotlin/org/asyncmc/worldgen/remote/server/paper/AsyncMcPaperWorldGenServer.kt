@@ -14,8 +14,8 @@ class AsyncMcPaperWorldGenServer: JavaPlugin() {
         tryOrFail {
             saveDefaultConfig()
             reloadConfig()
-            var appid: String = config.getString("webserver.secret-appid", "generate")!!
-            var token: String = config.getString("webserver.secret-token", "generate")!!
+            var appid: String = config.getString("webserver.secret-security-appid", "generate")!!
+            var token: String = config.getString("webserver.secret-security-token", "generate")!!
             var save = false
             if (appid == "generate") {
                 appid = generateString(8)

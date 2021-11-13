@@ -12,4 +12,4 @@ webserver:
     locked: true # It's a normal phase of this webserver when a request is done but Minecraft didn't finish the chunk yet
     others: true
   CORS-hosts:
-    - *
+    - any

@@ -88,7 +88,11 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         httpClient = HttpClient(CIO) {
             install(Auth) {
                 basic {
+                    sendWithoutRequest { request ->
+                        request.url.host == backend.host && request.url.port == backend.port
+                    }
                     credentials {
+                        realm = "Remote World Generator"
                         BasicAuthCredentials(
                             username = config.getString("backend.secret-security-appid", "paste-it-here").also {
                                 require(it != "paste-it-here") {

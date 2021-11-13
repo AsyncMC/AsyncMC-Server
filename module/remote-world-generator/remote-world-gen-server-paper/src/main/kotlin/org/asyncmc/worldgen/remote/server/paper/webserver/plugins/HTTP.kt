@@ -15,7 +15,7 @@ fun Application.configureHTTP(config: FileConfiguration) {
             header(HttpHeaders.Authorization)
             allowCredentials = true
             val svs = config.getStringList("webserver.CORS-hosts")
-            if ("*" in svs) {
+            if (svs.isEmpty() || svs.any { it.equals("all", ignoreCase = true) }) {
                 anyHost()
             } else {
                 hosts += svs
