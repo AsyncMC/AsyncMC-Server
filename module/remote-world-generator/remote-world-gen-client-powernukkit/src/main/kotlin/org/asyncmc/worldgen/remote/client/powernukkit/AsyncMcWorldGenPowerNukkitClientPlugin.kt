@@ -66,6 +66,7 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
 
     override fun onDisable() {
         embeddedBackend?.stop()
+        embeddedBackend?.join()
     }
 
     private fun throwingEnable() {

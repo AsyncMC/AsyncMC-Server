@@ -243,6 +243,10 @@ internal class EmbeddedBackend(private val plugin: AsyncMcWorldGenPowerNukkitCli
         }
     }
 
+    fun join() {
+        process?.onExit()?.join()
+    }
+
     fun kill() {
         process?.let { process ->
             if (process.isAlive) {
