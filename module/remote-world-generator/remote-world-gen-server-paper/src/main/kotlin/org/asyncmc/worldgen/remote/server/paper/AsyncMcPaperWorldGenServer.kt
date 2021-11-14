@@ -4,6 +4,7 @@ import io.ktor.server.cio.*
 import io.ktor.server.engine.*
 import org.asyncmc.worldgen.remote.server.paper.webserver.plugins.*
 import org.bukkit.plugin.java.JavaPlugin
+import java.net.ServerSocket
 import java.security.SecureRandom
 import java.util.logging.Level
 
@@ -33,7 +34,11 @@ class AsyncMcPaperWorldGenServer: JavaPlugin() {
                     "A new security token/appid was generated, please check the AsyncMcPaperWorldGenServer/config.yml file to get it."
                 }
             }
-            val port = config.getInt("webserver.port", -1).takeIf { it != -1 } ?: (server.port + 1)
+
+            val port = config.getInt("webserver.port", -1).takeIf { it != -1 }
+                ?: server.port.takeIf { it != 0 }?.let { it + 1 }
+                ?: 0
+
             EntityCaptureListener.startCleanupTask(this)
             server.pluginManager.registerEvents(EntityCaptureListener, this)
             startServer(port, appid, token)
@@ -56,11 +61,22 @@ class AsyncMcPaperWorldGenServer: JavaPlugin() {
 
     override fun onDisable() {
         webServer?.stop(10_000, 20_000)
+        dataFolder.resolve(".currentPorts").delete()
     }
 
     private fun startServer(port: Int, appId: String, token: String) {
         val plugin = this
-        val server = embeddedServer(CIO, host = server.ip.takeIf { it.isNotBlank() } ?: "0.0.0.0", port = port) {
+        val actualPort = if (port == 0) {
+            val socket = ServerSocket(0)
+            socket.localPort.also {
+                socket.close()
+            }
+        } else port
+        val server = embeddedServer(CIO, host = server.ip.takeIf { it.isNotBlank() } ?: "0.0.0.0", port = actualPort) {
+            //actualPort = (environment as ApplicationEngineEnvironment).connectors.first().port
+            dataFolder.resolve(".currentPorts").also { it.deleteOnExit() }.writeText(
+                actualPort.toString()/* + "\n" + server.asWrappedNMS().serverConnection!!.findBoundPort()*/
+            )
             configureSecurity(appId, token)
             configureRouting(plugin)
             configureSerialization()
@@ -74,5 +90,6 @@ class AsyncMcPaperWorldGenServer: JavaPlugin() {
         }
         webServer = server
         server.start(wait = false)
+        logger.info("Remote chunk web server started at port $actualPort")
     }
 }

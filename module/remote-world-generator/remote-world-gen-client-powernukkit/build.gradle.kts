@@ -23,15 +23,34 @@ dependencies {
         exclude(group = "org.jetbrains.kotlinx")
         exclude(group = "org.jetbrains")
     }
+    includedImplementation("org.rauschig:jarchivelib:0.7.1")
 }
 
+val webServerJar = buildDir.resolve("resources/main/META-INF/libs")
 tasks {
     build {
         finalizedBy(shadowJar)
     }
+
+    val copyBackendJar = create<Copy>("copyBackendJar") {
+        project(":module:remote-world-generator:remote-world-gen-server-paper").afterEvaluate {
+            val backendJar = tasks.getByName("shadowJar") as Jar
+            dependsOn(backendJar)
+            from(backendJar.archiveFile)
+            into(webServerJar)
+            rename(".+\\.jar", "AsyncMcPaperWorldGenServer.plugin")
+        }
+    }
+
     shadowJar {
+        dependsOn(copyBackendJar)
+        mustRunAfter(copyBackendJar)
         configurations = listOf(included)
         minimize()
+        /*from(webServerJar) {
+            include("*.plugin")
+            into("META-INF/libs")
+        }*/
     }
 
     processResources {
@@ -49,6 +68,11 @@ tasks {
             freeCompilerArgs = freeCompilerArgs + "-Xopt-in=kotlin.RequiresOptIn"
         }
     }
+}
+
+fun DependencyHandlerScope.includedImplementation(dependencyNotation: Any) {
+    implementation(dependencyNotation)
+    included(dependencyNotation)
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -81,7 +105,8 @@ tasks {
     }
 
     register<Jar>("createDebugJar") {
-        dependsOn(classes)
+        dependsOn(classes, "copyBackendJar")
+        mustRunAfter("copyBackendJar")
         group = "Execution"
         description = "Creates a fake jar to make PowerNukkit load your plugin directly from the compiled classes"
 

@@ -16,6 +16,8 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.features.auth.*
 import io.ktor.client.features.auth.providers.*
 import io.ktor.http.*
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -38,6 +40,7 @@ import java.io.InputStream
 internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
     lateinit var backend: Url
     lateinit var httpClient: HttpClient
+    private var embeddedBackend: EmbeddedBackend? = null
 
     override fun onEnable() {
         try {
@@ -61,6 +64,10 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         }
     }
 
+    override fun onDisable() {
+        embeddedBackend?.stop()
+    }
+
     private fun throwingEnable() {
         saveDefaultConfig()
         reloadConfig()
@@ -69,6 +76,24 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         server.pluginManager.registerEvents(EntityFixer(), this)
         if (server.pluginManager.getPlugin("MobPlugin")?.isEnabled != true) {
             BlockEntity.registerBlockEntity(BlockEntity.MOB_SPAWNER, BlockEntityMobSpawner::class.java)
+        }
+
+        if (config.getBoolean("backend.embedded.use-embedded", true)) {
+            val backend = EmbeddedBackend(this)
+            embeddedBackend = backend
+            runBlocking {
+                with(backend) {
+                    configureBackendFiles().joinAll()
+                    val backendData = startBackend()
+                    config["backend.url"] = "http://127.0.0.1:${backendData.port}"
+                    config["backend.secret-security-appid"] = backendData.secretAppId
+                    config["backend.secret-security-token"] = backendData.secretToken
+                }
+            }
+        } else {
+            config["backend.url"] = config.getString("backend.external.url", "url")
+            config["backend.secret-security-appid"] = config.getString("backend.external.secret-security-appid", "paste-it-here")
+            config["backend.secret-security-token"] = config.getString("backend.external.secret-security-token", "paste-it-here")
         }
 
         backend = try {
@@ -343,7 +368,7 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         RemoteToPowerNukkitConverter.addToBlockCache(mappings)
     }
 
-    private inline fun <R> useResource(filename: String, block: (InputStream) -> R): R {
+    internal inline fun <R> useResource(filename: String, block: (InputStream) -> R): R {
         return requireNotNull(getResource(filename)) {
             throw FileNotFoundException(filename)
         }.use(block)

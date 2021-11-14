@@ -10,6 +10,8 @@ value class NMSServer(val bukkit: Server): NMSWrapper<DedicatedServer> {
     inline val obc get() = bukkit.asWrappedOBC().obc
     override val nms: DedicatedServer get() = obc.server
 
+    inline val serverConnection: NMSServerConnection? get() = nms.serverConnection?.let(::NMSServerConnection)
+
     inline var port: Int
         get() = nms.port
         set(value) {
