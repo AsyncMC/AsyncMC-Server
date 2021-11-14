@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+version = "0.1.0-SNAPSHOT"
+
 val ktorVersion = "1.6.4"
 
 repositories {
@@ -14,9 +16,14 @@ repositories {
 val included by configurations.creating
 val worldGenDataVersion = "0.1.0-SNAPSHOT"
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+
 dependencies {
     implementation("org.powernukkit:powernukkit:1.5.2.0-PN-SNAPSHOT")
-    implementation("org.powernukkit.plugins:kotlin-plugin-lib:1.5.31+0.1.0+2021.11.13-SNAPSHOT")
+    implementation("org.powernukkit.plugins:kotlin-plugin-lib:1.5.31+0.1.0+2021.11.14-SNAPSHOT")
     implementation("org.asyncmc:remote-world-gen-data:$worldGenDataVersion")
     included("org.asyncmc:remote-world-gen-data:$worldGenDataVersion") {
         exclude(group = "org.jetbrains.kotlin")
@@ -65,6 +72,7 @@ tasks {
 
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
         kotlinOptions {
+            jvmTarget = "1.8"
             freeCompilerArgs = freeCompilerArgs + "-Xopt-in=kotlin.RequiresOptIn"
         }
     }

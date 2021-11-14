@@ -34,6 +34,7 @@ import org.powernukkit.plugins.kotlin.KotlinPluginBase
 import org.powernukkit.plugins.kotlin.fatal
 import java.io.FileNotFoundException
 import java.io.InputStream
+import java.nio.file.Paths
 
 
 @PublishedApi
@@ -370,8 +371,9 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
     }
 
     internal inline fun <R> useResource(filename: String, block: (InputStream) -> R): R {
-        return requireNotNull(getResource(filename)) {
-            throw FileNotFoundException(filename)
+        val normalized = Paths.get(filename).normalize().joinToString("/")
+        return requireNotNull(getResource(normalized)) {
+            throw FileNotFoundException(normalized)
         }.use(block)
     }
 

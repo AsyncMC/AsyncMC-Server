@@ -16,10 +16,7 @@ import org.asyncmc.worldgen.remote.server.paper.AsyncMcPaperWorldGenServer
 import org.asyncmc.worldgen.remote.server.paper.ChunkConverter
 import org.asyncmc.worldgen.remote.server.paper.EntityCaptureListener
 import org.asyncmc.worldgen.remote.server.paper.callSync
-import org.bukkit.Difficulty
-import org.bukkit.NamespacedKey
-import org.bukkit.World
-import org.bukkit.WorldCreator
+import org.bukkit.*
 import org.bukkit.entity.Animals
 import org.bukkit.entity.Hanging
 import org.bukkit.entity.Monster
@@ -30,6 +27,7 @@ import org.bukkit.event.Listener
 import org.bukkit.event.world.WorldInitEvent
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.io.path.isDirectory
 import kotlin.io.path.name
 
 @Suppress("EXPERIMENTAL_IS_NOT_ENABLED")
@@ -41,8 +39,10 @@ fun Application.configureRouting(plugin: AsyncMcPaperWorldGenServer) {
     val worldContainer = server.worldContainer.toPath()
     val worldsFolder = worldContainer.resolve("served-worlds")
 
-    worldsFolder.toFile().deleteRecursively()
-    Files.createDirectories(worldsFolder)
+    //worldsFolder.toFile().deleteRecursively()
+    if (!worldsFolder.isDirectory()) {
+        Files.createDirectories(worldsFolder)
+    }
 
     routing {
         authenticate("clientMinecraftServer") {
@@ -76,9 +76,15 @@ fun Application.configureRouting(plugin: AsyncMcPaperWorldGenServer) {
                     fun onInitWorld(ev: WorldInitEvent) {
                         val world = ev.world
                         if (world.name == worldName) {
+                            HandlerList.unregisterAll(this)
                             world.keepSpawnInMemory = false
                             world.difficulty = Difficulty.NORMAL
-                            HandlerList.unregisterAll(this)
+                            world.setGameRule(GameRule.DO_DAYLIGHT_CYCLE, false)
+                            world.setGameRule(GameRule.DO_MOB_SPAWNING, false)
+                            world.setGameRule(GameRule.DO_WEATHER_CYCLE, false)
+                            world.setGameRule(GameRule.RANDOM_TICK_SPEED, 0)
+                            world.setGameRule(GameRule.DO_MOB_LOOT, false)
+                            world.setGameRule(GameRule.MOB_GRIEFING, false)
                         }
                     }
                 }

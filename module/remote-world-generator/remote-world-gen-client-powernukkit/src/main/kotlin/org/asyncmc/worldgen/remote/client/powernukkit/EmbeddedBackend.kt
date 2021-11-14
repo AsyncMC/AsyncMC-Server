@@ -8,6 +8,7 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.coroutines.*
 import org.intellij.lang.annotations.Language
+import java.io.BufferedWriter
 import java.io.File
 
 internal class EmbeddedBackend(private val plugin: AsyncMcWorldGenPowerNukkitClientPlugin) {
@@ -86,22 +87,42 @@ internal class EmbeddedBackend(private val plugin: AsyncMcWorldGenPowerNukkitCli
         localJdkFile.unTarGzSkippingFirstDir(jdkFolder)
     }
 
+    private fun BufferedWriter.writePropertyLine(@Language("Properties") property: String) {
+        write(property)
+        newLine()
+    }
+
+    @Suppress("UnusedProperty")
     private fun createStaticBackendFiles() {
         val paperFolder = paperFolder
         val pluginDataFolder = pluginDataFolder
 
+        @Language("JSON")
+        val void = """{"layers": [{"block":"minecraft:air", "height": 0}], "biome": "minecraft:the_void", "structures": {}}"""
+
         paperFolder.resolve("eula.txt").writeText("eula=true")
         paperFolder.resolve("server.properties").bufferedWriter().use { out ->
-            out.write("server-ip=127.0.0.1"); out.newLine()
-            out.write("server-port=0"); out.newLine()
-            out.write("white-list=true"); out.newLine()
-            out.write("difficulty=easy"); out.newLine()
-            out.write("spawn-monsters=true"); out.newLine()
-            out.write("spawn-npcs=true"); out.newLine()
-            out.write("spawn-animals=true"); out.newLine()
-            out.write("sync-chunk-writes=false"); out.newLine()
-            out.write("enable-query=false"); out.newLine()
-            out.write("enable-rcon=false"); out.newLine()
+            out.writePropertyLine("server-ip=127.0.0.1")
+            out.writePropertyLine("server-port=0")
+            out.writePropertyLine("white-list=true")
+            out.writePropertyLine("difficulty=easy")
+            out.writePropertyLine("spawn-monsters=false")
+            out.writePropertyLine("spawn-npcs=false")
+            out.writePropertyLine("spawn-animals=false")
+            out.writePropertyLine("sync-chunk-writes=false")
+            out.writePropertyLine("enable-query=false")
+            out.writePropertyLine("enable-rcon=false")
+            out.writePropertyLine("level-type=FLAT")
+            out.writePropertyLine("generator-settings=${void.replace(":", "\\:")}")
+            out.writePropertyLine("allow-nether=false")
+        }
+        paperFolder.resolve("bukkit.yml").bufferedWriter().use { out ->
+            @Language("yaml")
+            val yaml = """
+                settings:
+                  allow-end: false
+                """.trimIndent()
+            out.write(yaml)
         }
         pluginDataFolder.resolve("config.yml").bufferedWriter().use { out ->
             @Language("yaml")
@@ -117,7 +138,7 @@ internal class EmbeddedBackend(private val plugin: AsyncMcWorldGenPowerNukkitCli
                     call-logging: true
                   log:
                     success: false
-                    locked: true # It's a normal phase of this webserver when a request is done but Minecraft didn't finish the chunk yet
+                    locked: false # It's a normal phase of this webserver when a request is done but Minecraft didn't finish the chunk yet
                     others: true
                   CORS-hosts:
                     - "127.0.0.1"
@@ -244,7 +265,7 @@ internal class EmbeddedBackend(private val plugin: AsyncMcWorldGenPowerNukkitCli
     }
 
     fun join() {
-        process?.onExit()?.join()
+        process?.waitFor()
     }
 
     fun kill() {
