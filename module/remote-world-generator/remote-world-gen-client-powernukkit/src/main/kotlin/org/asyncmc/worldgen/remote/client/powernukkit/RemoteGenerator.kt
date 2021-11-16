@@ -1,6 +1,5 @@
 package org.asyncmc.worldgen.remote.client.powernukkit
 
-import cn.nukkit.block.BlockID
 import cn.nukkit.blockstate.BlockState
 import cn.nukkit.level.ChunkManager
 import cn.nukkit.level.Level
@@ -22,7 +21,6 @@ import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import org.asyncmc.worldgen.remote.data.*
 import org.powernukkit.plugins.kotlin.ExperimentalPowerNukkitKotlinApi
-import org.powernukkit.plugins.kotlin.runInMain
 
 internal abstract class RemoteGenerator(val options: Map<String, Any>): Generator() {
     protected lateinit var chunkProvider: ChunkManager
@@ -151,57 +149,13 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
     private fun scheduleUpdates(remoteChunk: RemoteChunk, chunk: BaseFullChunk) {
         val level = chunk.provider.level ?: return // Can't schedule update if we don't have a level
         val pendingTickLists = remoteChunk.pendingTicks?.takeIf { it.blocks.isNotEmpty() || it.liquid.isNotEmpty() } ?: return
-        level.server.scheduler.scheduleTask(plugin) {
-            sequenceOf(pendingTickLists.blocks, pendingTickLists.liquid).flatten().forEach { remotePendingTick ->
-                var blockState = chunk.getBlockStateAt(remotePendingTick.x, remotePendingTick.y, remotePendingTick.z)
-                var layer = 0
-                remotePendingTick.blockId?.also { idCheck ->
-                    if (!(checkIdForPendingChunk(idCheck, blockState) ?: return@also)) {
-                        blockState = chunk.getBlockStateAt(remotePendingTick.x, remotePendingTick.y, remotePendingTick.z, 1)
-                        layer = 1
-                        if (!(checkIdForPendingChunk(idCheck, blockState) ?: return@also)) {
-                            return@forEach
-                        }
-                    }
-                }
-
-                if (blockState.blockId == BlockID.STILL_LAVA) {
-                    blockState = blockState.withBlockId(BlockID.LAVA)
-                    chunk.setBlockStateAt(remotePendingTick.x, remotePendingTick.y, remotePendingTick.z, layer, blockState)
-                } else if (blockState.blockId == BlockID.STILL_WATER) {
-                    blockState = blockState.withBlockId(BlockID.WATER)
-                    chunk.setBlockStateAt(remotePendingTick.x, remotePendingTick.y, remotePendingTick.z, layer, blockState)
-                }
-
-                val block = blockState.getBlock(level,
-                    (chunk.x shl 4) + remotePendingTick.x,
-                    remotePendingTick.y,
-                    (chunk.z shl 4) + remotePendingTick.z,
-                    layer,
-                    true
-                )
-
-                level.scheduleUpdate(block, block, remotePendingTick.ticks, remotePendingTick.priority, false)
-            }
-        }
-    }
-
-    private fun checkIdForPendingChunk(remoteId: String, blockState: BlockState): Boolean? {
-        val validIds = when (remoteId) {
-            "minecraft:lava" -> listOf(BlockID.LAVA, BlockID.STILL_LAVA)
-            "minecraft:water" -> listOf(BlockID.WATER, BlockID.STILL_WATER)
-            else -> return null
-        }
-        if (blockState.blockId !in validIds) {
-            return false
-        }
-
-        return true
+        plugin.mainThreadActionHandler.scheduleBlocking(level, chunk, pendingTickLists)
     }
 
     @OptIn(ExperimentalPowerNukkitKotlinApi::class)
     override fun populateChunk(chunkX: Int, chunkZ: Int) {
-        val level: Level = chunkProvider.getChunk(chunkX, chunkZ).provider?.level ?: run {
+        val cachedChunk = chunkProvider.getChunk(chunkX, chunkZ)
+        val level: Level = cachedChunk.provider?.level ?: run {
             plugin.log.warn { "The chunk population of cx:${chunkX} cz:${chunkZ} was aborted!" }
             return
         }
@@ -217,15 +171,7 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
                 requestData<List<RemoteEntity>>("entities/list", chunkX, chunkZ, requestEntities)
             }
             if (!remoteEntities.isNullOrEmpty()) {
-                runInMain(plugin) {
-                    val chunk = chunkProvider.getChunk(chunkX, chunkZ)
-                        ?: level.getChunk(chunkX, chunkZ, false)
-                    if (chunk == null) {
-                        plugin.log.error { "Failed to populate the chunk x:$chunkX z:$chunkZ at ${level.name} because the chunk was null" }
-                    } else {
-                        createEntities(remoteEntities, chunk)
-                    }
-                }
+                plugin.mainThreadActionHandler.scheduleEntitySpawningBlocking(level, cachedChunk, remoteEntities)
             }
         }
     }
@@ -261,18 +207,6 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
         }
     }
 
-    private fun createEntities(remoteEntities: List<RemoteEntity>, chunk: BaseFullChunk) {
-        remoteEntities.forEach { remoteEntity ->
-            try {
-                RemoteToPowerNukkitConverter.createNukkitEntity(chunk, remoteEntity)
-            } catch (e: Exception) {
-                plugin.log.error(e) {
-                    "Failed to create the entity $remoteEntity"
-                }
-            }
-        }
-    }
-
     private fun setBlockStates(remoteChunk: RemoteChunk,
         chunk: BaseFullChunk,
         blockEntities: Int2ObjectMap<RemoteBlockEntity>
@@ -301,13 +235,13 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
                         remoteChunk.blockLayers[0][(z and 0xF) or (x and 0xF shl 4) or ((y + remoteChunk.minY) shl 8)]
                     }
                     RemoteToPowerNukkitConverter.createDefaultBlockEntity(
-                        blockState.main,
-                        chunk,
-                        ix,
-                        cy,
-                        iz,
-                        blockEntity,
-                        remoteBlock
+                        blockState = blockState.main,
+                        chunk = chunk,
+                        cx = ix,
+                        cy = cy,
+                        cz = iz,
+                        remoteBlockEntity = blockEntity,
+                        remoteBlockState = remoteBlock
                     )
                 } catch (e: Exception) {
                     plugin.log.error(e) {

@@ -29,6 +29,7 @@ import org.asyncmc.worldgen.remote.client.powernukkit.RemoteToPowerNukkitConvert
 import org.asyncmc.worldgen.remote.client.powernukkit.biomes.*
 import org.asyncmc.worldgen.remote.client.powernukkit.entities.*
 import org.asyncmc.worldgen.remote.client.powernukkit.listeners.EntityFixer
+import org.asyncmc.worldgen.remote.client.powernukkit.listeners.PendingTicksHandler
 import org.asyncmc.worldgen.remote.data.RemoteBlockState
 import org.powernukkit.plugins.kotlin.KotlinPluginBase
 import org.powernukkit.plugins.kotlin.fatal
@@ -39,9 +40,10 @@ import java.nio.file.Paths
 
 @PublishedApi
 internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
-    lateinit var backend: Url
-    lateinit var httpClient: HttpClient
+    internal lateinit var backend: Url
+    internal lateinit var httpClient: HttpClient
     private var embeddedBackend: EmbeddedBackend? = null
+    internal lateinit var mainThreadActionHandler: PendingTicksHandler
 
     override fun onEnable() {
         try {
@@ -66,6 +68,7 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
     }
 
     override fun onDisable() {
+        mainThreadActionHandler.cancelTasks()
         embeddedBackend?.stop()
         embeddedBackend?.join()
     }
@@ -79,6 +82,8 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
         if (server.pluginManager.getPlugin("MobPlugin")?.isEnabled != true) {
             BlockEntity.registerBlockEntity(BlockEntity.MOB_SPAWNER, BlockEntityMobSpawner::class.java)
         }
+
+        mainThreadActionHandler = PendingTicksHandler(this)
 
         if (config.getBoolean("backend.embedded.use-embedded", true)) {
             val backend = EmbeddedBackend(this)
