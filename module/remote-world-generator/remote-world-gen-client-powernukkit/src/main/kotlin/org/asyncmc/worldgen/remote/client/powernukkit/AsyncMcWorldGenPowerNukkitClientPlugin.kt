@@ -68,7 +68,18 @@ internal class AsyncMcWorldGenPowerNukkitClientPlugin: KotlinPluginBase() {
     }
 
     override fun onDisable() {
-        mainThreadActionHandler.cancelTasks()
+        server.levels.values.filter { it.generator is RemoteGenerator }.takeIf { it.isNotEmpty() }?.let { remoteLevels ->
+            mainThreadActionHandler.cancelTasks()
+            server.scheduler.cancelAllTasks()
+            server.scheduler.mainThreadHeartbeat(Int.MAX_VALUE / 2)
+            Thread.sleep(3_000) // Giving some time for the async generators to complete
+            remoteLevels.forEach { level ->
+                server.unloadLevel(level, true)
+            }
+            Thread.sleep(3_000) // Giving some time for the async generators to complete
+        }
+
+        runBlocking { mainThreadActionHandler.closeAndSave() }
         embeddedBackend?.stop()
         embeddedBackend?.join()
     }

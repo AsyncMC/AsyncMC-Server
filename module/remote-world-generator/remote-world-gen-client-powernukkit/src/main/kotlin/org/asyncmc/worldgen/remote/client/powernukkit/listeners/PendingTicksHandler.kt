@@ -6,27 +6,30 @@ import cn.nukkit.event.EventHandler
 import cn.nukkit.event.EventPriority
 import cn.nukkit.event.Listener
 import cn.nukkit.event.level.LevelLoadEvent
+import cn.nukkit.event.level.LevelSaveEvent
 import cn.nukkit.level.Level
 import cn.nukkit.level.format.generic.BaseFullChunk
 import cn.nukkit.plugin.PowerNukkitPlugin
 import cn.nukkit.scheduler.Task
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
+import kotlinx.serialization.json.encodeToStream
 import org.asyncmc.worldgen.remote.client.powernukkit.AsyncMcWorldGenPowerNukkitClientPlugin
+import org.asyncmc.worldgen.remote.client.powernukkit.RemoteGenerator
 import org.asyncmc.worldgen.remote.client.powernukkit.RemoteToPowerNukkitConverter
 import org.asyncmc.worldgen.remote.data.RemoteEntity
 import org.asyncmc.worldgen.remote.data.RemotePendingTick
 import org.asyncmc.worldgen.remote.data.RemotePendingTickLists
+import java.io.File
 
 internal class PendingTicksHandler(private val plugin: AsyncMcWorldGenPowerNukkitClientPlugin): Listener {
     val pendingTicks = Channel<LevelPendingTicks>(Channel.BUFFERED)
@@ -38,14 +41,9 @@ internal class PendingTicksHandler(private val plugin: AsyncMcWorldGenPowerNukki
 
     init {
         plugin.server.pluginManager.registerEvents(this, PowerNukkitPlugin.getInstance())
-        Runtime.getRuntime().addShutdownHook(object : Thread() {
-            override fun run() {
-                runBlocking { closeAndSave() }
-            }
-        })
     }
 
-    private suspend fun closeAndSave() {
+    internal suspend fun closeAndSave() {
         plugin.dataFolder.apply {
             mkdirs()
             pendingTicks.close()
@@ -69,24 +67,88 @@ internal class PendingTicksHandler(private val plugin: AsyncMcWorldGenPowerNukki
         }
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     fun onLevelLoad(ev: LevelLoadEvent) {
+        if (ev.level.generator !is RemoteGenerator) {
+            return
+        }
         val levelName = ev.level.folderName
-        val pendingTicksToLoad = savedPendingTicks.filter { it.levelName == levelName }
-        val pendingEntitiesToLoad = savedPendingEntities.filter { it.levelName == levelName }
+        val pendingTicksToLoad = savedPendingTicks.filterTo(mutableSetOf()) { it.levelName == levelName }
+        val pendingEntitiesToLoad = savedPendingEntities.filterTo(mutableSetOf()) { it.levelName == levelName }
         savedPendingTicks -= pendingTicksToLoad
         savedPendingEntities -= pendingEntitiesToLoad
+        val folder = File(ev.level.server.dataPath).resolve("worlds").resolve(ev.level.folderName).resolve("AsyncMcRemoteWorldGen")
+        folder.resolve("pendingTicks.json").takeIf { it.isFile }?.inputStream()?.use { input ->
+            Json.Default.decodeFromStream<Set<LevelPendingTicks>>(input).let {
+                pendingTicksToLoad += it
+            }
+        }
+        folder.resolve("pendingEntities.json").takeIf { it.isFile }?.inputStream()?.use { input ->
+            Json.Default.decodeFromStream<Set<LevelPendingEntities>>(input).let {
+                pendingEntitiesToLoad += it
+            }
+        }
+        if (pendingEntitiesToLoad.isEmpty() && pendingTicksToLoad.isEmpty()) {
+            return
+        }
         with(CoroutineScope(Dispatchers.Default)) {
-            launch {
-                pendingTicksToLoad.forEach {
-                    pendingTicks.send(it)
+            if (pendingTicksToLoad.isNotEmpty()) {
+                launch {
+                    pendingTicksToLoad.forEach {
+                        pendingTicks.send(it)
+                    }
                 }
             }
-            launch {
-                pendingEntitiesToLoad.forEach {
+            if (pendingTicksToLoad.isNotEmpty()) {
+                launch {
+                    pendingEntitiesToLoad.forEach {
+                        pendingEntities.send(it)
+                    }
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    fun onLevelSave(ev: LevelSaveEvent) {
+        if (ev.level.generator !is RemoteGenerator) {
+            return
+        }
+        val levelPendingTicks = mutableSetOf<LevelPendingTicks>()
+        val levelPendingEntities = mutableSetOf<LevelPendingEntities>()
+        while (true) {
+            levelPendingTicks += pendingTicks.tryReceive().getOrNull() ?: break
+        }
+        while (true) {
+            levelPendingEntities += pendingEntities.tryReceive().getOrNull() ?: break
+        }
+        val folder = File(ev.level.server.dataPath).resolve("worlds").resolve(ev.level.folderName).resolve("AsyncMcRemoteWorldGen")
+        folder.mkdirs()
+        folder.resolve("pendingTicks.json").outputStream().buffered().use { out ->
+            Json.Default.encodeToStream(levelPendingTicks.filter { it.levelName == ev.level.folderName }, out)
+        }
+        folder.resolve("pendingEntities.json").outputStream().buffered().use { out ->
+            Json.Default.encodeToStream(levelPendingEntities.filter { it.levelName == ev.level.folderName }, out)
+        }
+        if (levelPendingTicks.isEmpty() && levelPendingEntities.isEmpty()) {
+            return
+        }
+        runBlocking {
+            val job = if (levelPendingTicks.isEmpty()) Job().also { it.complete() } else launch {
+                levelPendingTicks.forEach {
+                    if (!pendingTicks.trySend(it).isSuccess) {
+                        pendingTicks.send(it)
+                    }
+                }
+            }
+            levelPendingEntities.forEach {
+                if (!pendingEntities.trySend(it).isSuccess) {
                     pendingEntities.send(it)
                 }
             }
+            job.join()
         }
     }
 
@@ -250,13 +312,25 @@ internal class PendingTicksHandler(private val plugin: AsyncMcWorldGenPowerNukki
         val pending: RemotePendingTickLists,
         val chunkX: Int,
         val chunkZ: Int,
+    ) {
+        @Transient
+        var cachedLevel: Level? = null
 
         @Transient
-        val cachedLevel: Level? = null,
+        var cachedChunk: BaseFullChunk? = null
 
-        @Transient
-        val cachedChunk: BaseFullChunk? = null,
-    )
+        constructor(
+            levelName: String,
+            pending: RemotePendingTickLists,
+            chunkX: Int,
+            chunkZ: Int,
+            cachedLevel: Level?,
+            cachedChunk: BaseFullChunk? = null
+        ): this(levelName, pending, chunkX, chunkZ) {
+            this.cachedLevel = cachedLevel
+            this.cachedChunk = cachedChunk
+        }
+    }
 
     @Serializable
     internal data class LevelPendingEntities(
@@ -264,11 +338,23 @@ internal class PendingTicksHandler(private val plugin: AsyncMcWorldGenPowerNukki
         val pending: List<RemoteEntity>,
         val chunkX: Int,
         val chunkZ: Int,
+    ) {
+        @Transient
+        var cachedLevel: Level? = null
 
         @Transient
-        val cachedLevel: Level? = null,
+        var cachedChunk: BaseFullChunk? = null
 
-        @Transient
-        val cachedChunk: BaseFullChunk? = null,
-    )
+        constructor(
+            levelName: String,
+            pending: List<RemoteEntity>,
+            chunkX: Int,
+            chunkZ: Int,
+            cachedLevel: Level?,
+            cachedChunk: BaseFullChunk? = null
+        ): this(levelName, pending, chunkX, chunkZ) {
+            this.cachedLevel = cachedLevel
+            this.cachedChunk = cachedChunk
+        }
+    }
 }

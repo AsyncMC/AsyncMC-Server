@@ -118,15 +118,21 @@ internal abstract class RemoteGenerator(val options: Map<String, Any>): Generato
 
     @OptIn(ExperimentalSerializationApi::class)
     override fun generateChunk(chunkX: Int, chunkZ: Int) {
+        val chunk = chunkProvider.getChunk(chunkX, chunkZ)
         val remoteChunkAsync = CoroutineScope(Dispatchers.IO).async {
             val remoteWorldName = remoteName ?: remoteNameAsync!!.await()
             keepTrying({"Could not receive the remote chunk x=$chunkX, z=$chunkX for $remoteWorldName - $chunkProvider"}) {
+                if (chunk.provider == null) {
+                    return@async null
+                }
                 requestData<RemoteChunk>("chunk/create", chunkX, chunkZ, cachedSettings)
             }
         }
 
-        val chunk = chunkProvider.getChunk(chunkX, chunkZ)
-        val remoteChunk = runBlocking { remoteChunkAsync.await() }
+        val remoteChunk = runBlocking { remoteChunkAsync.await() } ?: run {
+            plugin.log.warn { "The chunk creation of cx:${chunkX} cz:${chunkZ} was aborted!" }
+            return
+        }
 
         setBiomes(remoteChunk, chunk)
         val blockEntities = if (remoteChunk.blockEntities.isEmpty()) {
